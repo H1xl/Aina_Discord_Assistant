@@ -134,6 +134,97 @@ python -m bot.main
    выдаёт обязательные+выбранные роли, снимает «Не имеет ролей», поздравляет
    в [пинги], пишет в [журнал] и уведомляет Telegram.
 
+## Деплой на сервер (Docker)
+
+Инструкция для Linux-сервера (Ubuntu/Debian). Предполагается, что код
+опубликован в git-репозитории (GitHub/GitLab/Gitea — не важно).
+
+### 0. Публикация кода (один раз, с рабочей машины)
+
+Если проект ещё не в git:
+
+```bash
+cd d:\PythonBots\Aina_RoleManager
+git init
+git add .
+git commit -m "Initial commit"
+git remote add origin https://github.com/ВАШ_ЛОГИН/Aina_RoleManager.git
+git push -u origin main
+```
+
+`.env` и `data/` в `.gitignore` — токены и база в репозиторий не попадут.
+
+### 1. Установка Docker на сервере
+
+```bash
+# официальный скрипт Docker (ставит движок и compose-плагин)
+curl -fsSL https://get.docker.com | sudo sh
+
+# чтобы запускать docker без sudo (перелогиньтесь после этого)
+sudo usermod -aG docker $USER
+```
+
+Проверка: `docker --version` и `docker compose version`.
+
+### 2. Клонирование репозитория
+
+```bash
+git clone https://github.com/ВАШ_ЛОГИН/Aina_RoleManager.git
+cd Aina_RoleManager
+```
+
+Для приватного репозитория используйте deploy key или personal access token:
+`git clone https://ТОКЕН@github.com/ВАШ_ЛОГИН/Aina_RoleManager.git`.
+
+### 3. Настройка окружения
+
+```bash
+cp .env.example .env
+nano .env    # вписать DISCORD_TOKEN и TELEGRAM_TOKEN
+```
+
+### 4. Сборка и запуск
+
+```bash
+docker compose up -d --build
+```
+
+Compose соберёт образ из `Dockerfile` и запустит контейнер в фоне.
+`restart: unless-stopped` уже прописан — после перезагрузки сервера
+контейнер поднимется сам (если демон Docker в автозапуске:
+`sudo systemctl enable docker`).
+
+База SQLite лежит на хосте в `./data/bot.db` (volume) и переживает
+пересборку контейнера.
+
+### 5. Проверка и повседневные команды
+
+```bash
+docker compose logs -f          # логи (Ctrl+C — выйти, бот продолжит работать)
+docker compose ps               # статус контейнера
+docker compose restart          # перезапуск
+docker compose down             # остановить и удалить контейнер (данные в ./data останутся)
+```
+
+В логах при успешном старте будут строки «Discord-бот вошёл как …» и
+«Запускаю Discord- и Telegram-ботов…».
+
+### 6. Обновление бота
+
+```bash
+cd Aina_RoleManager
+git pull
+docker compose up -d --build    # пересборка и перезапуск одним шагом
+```
+
+### 7. Бэкап базы
+
+```bash
+docker compose stop
+cp data/bot.db ~/backups/bot-$(date +%F).db
+docker compose start
+```
+
 ## Структура проекта
 
 ```
