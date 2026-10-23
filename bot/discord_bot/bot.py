@@ -1,4 +1,4 @@
-"""Фабрика Discord-бота: intents, коги, синхронизация slash-команд."""
+"""Фабрика Discord-бота: intents, коги ядра и модулей, синхронизация slash-команд."""
 
 import logging
 
@@ -7,21 +7,23 @@ from discord.ext import commands
 
 from bot.core import texts
 from bot.core.config import Config
+from bot.db.database import Database
 from bot.db.repository import Repository
+from bot.modules import load_modules
 
 log = logging.getLogger(__name__)
 
-COGS = (
-    "bot.discord_bot.cogs.verification",
-    "bot.discord_bot.cogs.setup",
-    "bot.discord_bot.cogs.connect",
+# Коги ядра — загружаются всегда.
+CORE_COGS = (
+    "bot.discord_bot.cogs.telegram_link",
 )
 
 
 class AinaBot(commands.Bot):
-    def __init__(self, config: Config, repo: Repository):
+    def __init__(self, config: Config, db: Database, repo: Repository):
         intents = discord.Intents.default()
         intents.members = True  # обязателен для on_member_join/on_member_remove
+        # voice_states (защита от мута) входит в Intents.default().
         # message_content не нужен: бот работает только на slash-командах.
         super().__init__(
             command_prefix="!",
@@ -32,12 +34,19 @@ class AinaBot(commands.Bot):
             ),
         )
         self.config = config
-        self.repo = repo
+        self.db = db
+        self.repo = repo  # репозиторий ядра; модули создают свои поверх self.db
         self.tg_bot = None  # aiogram.Bot, проставляется в main.py
+        self.modules = load_modules(config.enabled_modules)
 
     async def setup_hook(self) -> None:
-        for cog in COGS:
+        for cog in CORE_COGS:
             await self.load_extension(cog)
+        for module in self.modules:
+            await self.db.migrate(module.name, module.migrations)
+            for extension in module.extensions:
+                await self.load_extension(extension)
+            log.info("Модуль «%s» (%s) загружен", module.title, module.name)
 
         if self.config.test_guild_id:
             guild = discord.Object(id=self.config.test_guild_id)

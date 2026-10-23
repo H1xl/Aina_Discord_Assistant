@@ -7,8 +7,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.core import texts
-from bot.discord_bot.views.selects import (
+from bot.discord_bot.helpers import deny_admin
+from bot.modules.roles import texts
+from bot.modules.roles.repository import RolesRepository
+from bot.modules.roles.views.selects import (
     OptionalRolesSetupView,
     SetupChannelsView,
     SetupRolesView,
@@ -20,7 +22,7 @@ log = logging.getLogger(__name__)
 class SetupCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.repo = bot.repo
+        self.repo = RolesRepository(bot.db)
         self.config = bot.config
 
     # Discord modal поддерживает только текстовые поля, поэтому /setup —
@@ -34,7 +36,7 @@ class SetupCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def setup_command(self, interaction: discord.Interaction) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await self._deny(interaction)
+            await deny_admin(interaction)
             return
 
         view = SetupChannelsView(author_id=interaction.user.id)
@@ -143,7 +145,7 @@ class SetupCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def setup_optional_roles(self, interaction: discord.Interaction) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await self._deny(interaction)
+            await deny_admin(interaction)
             return
 
         view = OptionalRolesSetupView(author_id=interaction.user.id)
@@ -181,7 +183,7 @@ class SetupCog(commands.Cog):
         self, interaction: discord.Interaction, days: app_commands.Range[int, 1, 365] = 7
     ) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await self._deny(interaction)
+            await deny_admin(interaction)
             return
         since = int(time.time()) - days * 86400
         stats = await self.repo.get_stats(interaction.guild.id, since)
@@ -193,14 +195,6 @@ class SetupCog(commands.Cog):
             colour=texts.EMBED_COLOR,
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    async def _deny(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(
-            embed=discord.Embed(
-                description=texts.ADMIN_ONLY, colour=texts.EMBED_COLOR_ERROR
-            ),
-            ephemeral=True,
-        )
 
 
 async def setup(bot: commands.Bot) -> None:

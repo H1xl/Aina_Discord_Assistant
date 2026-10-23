@@ -7,12 +7,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_MODULES = ("roles",)
+
 
 @dataclass(frozen=True)
 class Config:
     discord_token: str
     telegram_token: str
     db_path: str = "data/bot.db"
+    # Включённые модули (см. bot/modules/__init__.py).
+    enabled_modules: tuple[str, ...] = DEFAULT_MODULES
     # Полное время на верификацию нового участника, сек.
     verification_timeout: int = 600
     # Интервал между напоминаниями, сек.
@@ -33,11 +37,19 @@ def load_config() -> Config:
             "DISCORD_TOKEN и TELEGRAM_TOKEN обязательны — заполните .env (см. .env.example)"
         )
 
+    modules_raw = os.getenv("ENABLED_MODULES", "").strip()
+    enabled_modules = (
+        tuple(name.strip() for name in modules_raw.split(",") if name.strip())
+        if modules_raw
+        else DEFAULT_MODULES
+    )
+
     test_guild = os.getenv("TEST_GUILD_ID", "").strip()
     return Config(
         discord_token=discord_token,
         telegram_token=telegram_token,
         db_path=os.getenv("DB_PATH", "data/bot.db"),
+        enabled_modules=enabled_modules,
         verification_timeout=int(os.getenv("VERIFICATION_TIMEOUT", "600")),
         reminder_interval=int(os.getenv("REMINDER_INTERVAL", "60")),
         connect_code_ttl=int(os.getenv("CONNECT_CODE_TTL", "600")),

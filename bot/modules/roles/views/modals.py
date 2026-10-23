@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from bot.core import texts
+from bot.modules.roles import texts
 from bot.core.utils import parse_hex_color
 
 if TYPE_CHECKING:
-    from bot.discord_bot.cogs.verification import VerificationCog
+    from bot.modules.roles.cogs.verification import VerificationCog
 
 
 def _error_embed(description: str) -> discord.Embed:

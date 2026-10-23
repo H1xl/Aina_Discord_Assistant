@@ -9,12 +9,13 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.core import texts
 from bot.core.utils import format_hex_color
-from bot.db import models
-from bot.discord_bot.views.modals import EditRoleModal, RoleModal
-from bot.discord_bot.views.selects import OptionalRolesView
-from bot.telegram_bot.notifier import send_verification_notice
+from bot.discord_bot.helpers import respond, with_backoff
+from bot.modules.roles import models, texts
+from bot.modules.roles.notify import send_verification_notice
+from bot.modules.roles.repository import RolesRepository
+from bot.modules.roles.views.modals import EditRoleModal, RoleModal
+from bot.modules.roles.views.selects import OptionalRolesView
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ Key = tuple[int, int]  # (guild_id, user_id)
 class VerificationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.repo = bot.repo
+        self.repo = RolesRepository(bot.db)
         self.config = bot.config
         # Активные таймеры верификации и локи от двойных нажатий — в памяти;
         # источник истины — pending_verifications в БД (восстанавливается при старте).
@@ -45,26 +46,6 @@ class VerificationCog(commands.Cog):
     # ------------------------------------------------------------------
     # Вспомогательные обёртки
     # ------------------------------------------------------------------
-    async def _with_backoff(self, factory, attempts: int = 3):
-        """Вызывает coroutine-фабрику с экспоненциальным backoff на HTTP-ошибках.
-
-        discord.py сам ждёт rate limit, но при сетевых/5xx-ошибках повторяем.
-        """
-        delay = 2.0
-        for attempt in range(attempts):
-            try:
-                return await factory()
-            except discord.NotFound:
-                return None
-            except discord.Forbidden:
-                raise
-            except discord.HTTPException as exc:
-                if attempt == attempts - 1:
-                    log.warning("Discord API error after retries: %s", exc)
-                    return None
-                await asyncio.sleep(delay)
-                delay *= 2
-
     def _get_text_channel(
         self, guild: discord.Guild, channel_id: Optional[int]
     ) -> Optional[discord.TextChannel]:
@@ -87,7 +68,7 @@ class VerificationCog(commands.Cog):
         if channel is None:
             return
         embed = discord.Embed(title=title, description=description, colour=colour)
-        await self._with_backoff(lambda: channel.send(embed=embed))
+        await with_backoff(lambda: channel.send(embed=embed))
 
     async def _delete_reminder(self, guild: discord.Guild, message_id: Optional[int]):
         if not message_id:
@@ -98,7 +79,7 @@ class VerificationCog(commands.Cog):
         )
         if channel is None:
             return
-        await self._with_backoff(
+        await with_backoff(
             lambda: channel.get_partial_message(message_id).delete()
         )
 
@@ -324,7 +305,7 @@ class VerificationCog(commands.Cog):
                 ),
                 colour=texts.EMBED_COLOR,
             )
-        message = await self._with_backoff(
+        message = await with_backoff(
             lambda: channel.send(content=member.mention, embed=embed)
         )
         if message is not None:
@@ -484,7 +465,7 @@ class VerificationCog(commands.Cog):
         lock = self._lock(key)
 
         if lock.locked():
-            await self._respond(interaction, texts.ALREADY_PROCESSING, ephemeral=True)
+            await respond(interaction, texts.ALREADY_PROCESSING, ephemeral=True)
             return
 
         async with lock:
@@ -493,13 +474,13 @@ class VerificationCog(commands.Cog):
             if tracked:
                 row = await self.repo.get_pending(guild.id, member.id)
                 if row is None or row["status"] == models.STATUS_COMPLETED:
-                    await self._respond(
+                    await respond(
                         interaction, texts.ALREADY_PROCESSING, ephemeral=True
                     )
                     return
 
             if len(guild.roles) >= self.config.role_limit_threshold:
-                await self._respond(
+                await respond(
                     interaction, texts.ROLE_LIMIT_REACHED, ephemeral=True,
                     colour=texts.EMBED_COLOR_ERROR,
                 )
@@ -520,7 +501,7 @@ class VerificationCog(commands.Cog):
                     reason=f"Именная роль для {member} (/role)",
                 )
             except discord.Forbidden:
-                await self._respond(
+                await respond(
                     interaction, texts.ROLE_CREATE_FORBIDDEN, ephemeral=True,
                     colour=texts.EMBED_COLOR_ERROR,
                 )
@@ -554,7 +535,7 @@ class VerificationCog(commands.Cog):
                 if no_role is not None and no_role in member.roles:
                     await member.remove_roles(no_role, reason="Верификация пройдена")
             except discord.Forbidden:
-                await self._respond(
+                await respond(
                     interaction, texts.ROLE_CREATE_FORBIDDEN, ephemeral=True,
                     colour=texts.EMBED_COLOR_ERROR,
                 )
@@ -596,7 +577,7 @@ class VerificationCog(commands.Cog):
                     ),
                     colour=discord.Colour(color_value),
                 )
-                await self._with_backoff(lambda: pings_channel.send(embed=embed))
+                await with_backoff(lambda: pings_channel.send(embed=embed))
 
             # Журнал.
             await self._log_to_channel(
@@ -622,7 +603,7 @@ class VerificationCog(commands.Cog):
                 inviter=inviter,
             )
 
-            await self._respond(
+            await respond(
                 interaction,
                 texts.SUCCESS_EPHEMERAL.format(role_name=custom_role.name),
                 ephemeral=True,
@@ -650,7 +631,7 @@ class VerificationCog(commands.Cog):
         async with self._lock(key):
             role = guild.get_role(role_id)
             if role is None:
-                await self._respond(
+                await respond(
                     interaction, texts.EDIT_ROLE_DELETED, ephemeral=True,
                     colour=texts.EMBED_COLOR_WARNING,
                 )
@@ -665,7 +646,7 @@ class VerificationCog(commands.Cog):
                     reason=f"Редактирование именной роли {member} (/role)",
                 )
             except discord.Forbidden:
-                await self._respond(
+                await respond(
                     interaction, texts.ROLE_CREATE_FORBIDDEN, ephemeral=True,
                     colour=texts.EMBED_COLOR_ERROR,
                 )
@@ -704,31 +685,12 @@ class VerificationCog(commands.Cog):
                     inviter=None,
                 )
 
-            await self._respond(
+            await respond(
                 interaction,
                 texts.EDIT_SUCCESS.format(new_name=new_name, new_color=new_color_hex),
                 ephemeral=True,
                 colour=texts.EMBED_COLOR_SUCCESS,
             )
-
-    # ------------------------------------------------------------------
-    async def _respond(
-        self,
-        interaction: discord.Interaction,
-        description: str,
-        ephemeral: bool = True,
-        title: Optional[str] = None,
-        colour: int = texts.EMBED_COLOR,
-    ) -> None:
-        """Ephemeral-ответ, работающий и для первого ответа, и для followup."""
-        embed = discord.Embed(title=title, description=description, colour=colour)
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(embed=embed, ephemeral=ephemeral)
-            else:
-                await interaction.response.send_message(embed=embed, ephemeral=ephemeral)
-        except discord.HTTPException as exc:
-            log.warning("Не удалось ответить на interaction: %s", exc)
 
 
 async def setup(bot: commands.Bot) -> None:

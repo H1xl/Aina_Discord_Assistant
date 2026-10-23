@@ -1,5 +1,8 @@
 """Точка входа: Discord- и Telegram-боты в одном процессе, одна БД.
 
+Ядро (БД, привязка Telegram) поднимается здесь; модули подключает AinaBot
+согласно ENABLED_MODULES.
+
 Запуск: python -m bot.main
 """
 
@@ -7,6 +10,8 @@ import asyncio
 import logging
 
 from bot.core.config import load_config
+from bot.db.database import Database
+from bot.db.models import CORE_MIGRATIONS, CORE_NAMESPACE
 from bot.db.repository import Repository
 from bot.discord_bot.bot import AinaBot
 from bot.telegram_bot.bot import create_dispatcher, create_telegram_bot
@@ -21,9 +26,11 @@ async def run() -> None:
     )
 
     config = load_config()
-    repo = await Repository.connect(config.db_path)
+    db = await Database.connect(config.db_path)
+    await db.migrate(CORE_NAMESPACE, CORE_MIGRATIONS)
+    repo = Repository(db)
 
-    discord_bot = AinaBot(config, repo)
+    discord_bot = AinaBot(config, db, repo)
     tg_bot = create_telegram_bot(config)
     discord_bot.tg_bot = tg_bot
     dispatcher = create_dispatcher(repo, discord_bot)
@@ -39,7 +46,7 @@ async def run() -> None:
         if not discord_bot.is_closed():
             await discord_bot.close()
         await tg_bot.session.close()
-        await repo.close()
+        await db.close()
 
 
 def main() -> None:

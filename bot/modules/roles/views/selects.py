@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Optional
 
 import discord
 
-from bot.core import texts
+from bot.modules.roles import texts
 
 if TYPE_CHECKING:
-    from bot.discord_bot.cogs.verification import VerificationCog
+    from bot.modules.roles.cogs.verification import VerificationCog
 
 
 class OptionalRolesView(discord.ui.View):
