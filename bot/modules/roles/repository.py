@@ -84,6 +84,46 @@ class RolesRepository(Repository):
         return [row["role_id"] for row in rows]
 
     # ------------------------------------------------------------------
+    # personal_roles: кому принадлежит именная роль
+    # ------------------------------------------------------------------
+    async def get_personal_role_id(self, guild_id: int, user_id: int) -> Optional[int]:
+        row = await self._fetchone(
+            "SELECT role_id FROM personal_roles WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        )
+        return row["role_id"] if row else None
+
+    async def get_personal_roles(self, guild_id: int) -> dict[int, int]:
+        """Все привязки сервера: role_id → user_id."""
+        rows = await self._fetchall(
+            "SELECT user_id, role_id FROM personal_roles WHERE guild_id = ?", (guild_id,)
+        )
+        return {row["role_id"]: row["user_id"] for row in rows}
+
+    async def bind_personal_roles(
+        self, guild_id: int, bindings: list[tuple[int, int]], source: str
+    ) -> None:
+        """Привязывает роли к участникам: список пар (user_id, role_id).
+
+        У участника — одна именная роль, у роли — один владелец, поэтому
+        прежние привязки этого участника и этой роли снимаются.
+        """
+        now = _now()
+        for user_id, role_id in bindings:
+            await self._conn.execute(
+                "DELETE FROM personal_roles WHERE guild_id = ? AND (user_id = ? OR role_id = ?)",
+                (guild_id, user_id, role_id),
+            )
+            await self._conn.execute(
+                """
+                INSERT INTO personal_roles (guild_id, user_id, role_id, source, bound_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (guild_id, user_id, role_id, source, now),
+            )
+        await self._conn.commit()
+
+    # ------------------------------------------------------------------
     # pending_verifications
     # ------------------------------------------------------------------
     async def upsert_pending(self, guild_id: int, user_id: int, joined_at: int) -> None:
@@ -166,18 +206,6 @@ class RolesRepository(Repository):
             VALUES (?, ?, ?, ?, ?)
             """,
             (guild_id, user_id, custom_role_id, inviter, _now()),
-        )
-
-    async def get_last_verification(
-        self, guild_id: int, user_id: int
-    ) -> Optional[aiosqlite.Row]:
-        return await self._fetchone(
-            """
-            SELECT * FROM verification_log
-            WHERE guild_id = ? AND user_id = ?
-            ORDER BY completed_at DESC, id DESC LIMIT 1
-            """,
-            (guild_id, user_id),
         )
 
     async def add_role_edit(

@@ -379,9 +379,9 @@ class VerificationCog(commands.Cog):
             await interaction.response.send_modal(RoleModal(self, tracked=True))
             return
 
-        last = await self.repo.get_last_verification(guild.id, member.id)
-        if last is not None:
-            role = guild.get_role(last["custom_role_id"])
+        role_id = await self.repo.get_personal_role_id(guild.id, member.id)
+        if role_id is not None:
+            role = guild.get_role(role_id)
             if role is None:
                 await interaction.response.send_message(
                     embed=discord.Embed(
@@ -394,8 +394,9 @@ class VerificationCog(commands.Cog):
             await interaction.response.send_modal(EditRoleModal(self, role))
             return
 
-        # Ни pending, ни истории: старый участник, зашедший до появления бота.
-        # Запускаем обычный флоу, но без таймера кика (tracked=False).
+        # Ни pending, ни именной роли: старый участник, зашедший до появления
+        # бота (если роль у него уже есть — админ может привязать её через
+        # /import-roles). Запускаем обычный флоу без таймера кика.
         await interaction.response.send_modal(RoleModal(self, tracked=False))
 
     # ------------------------------------------------------------------
@@ -561,6 +562,9 @@ class VerificationCog(commands.Cog):
                 await self.repo.set_reminder_task_active(guild.id, member.id, False)
 
             await self.repo.add_verification(guild.id, member.id, custom_role.id, inviter)
+            await self.repo.bind_personal_roles(
+                guild.id, [(member.id, custom_role.id)], models.SOURCE_VERIFICATION
+            )
             await self.repo.add_action_log(
                 guild.id, "verified", f"user_id={member.id} role_id={custom_role.id}"
             )

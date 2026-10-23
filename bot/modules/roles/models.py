@@ -69,6 +69,32 @@ MIGRATIONS = [
             ON verification_log (guild_id, user_id, completed_at)
         """,
     ],
+    # v2 — явная привязка «участник ↔ именная роль». Раньше владелец
+    # определялся по последней записи verification_log; теперь роль можно
+    # привязать и импортом (/import-roles) — для ролей, созданных вручную.
+    [
+        """
+        CREATE TABLE IF NOT EXISTS personal_roles (
+            guild_id INTEGER NOT NULL,
+            user_id  INTEGER NOT NULL,
+            role_id  INTEGER NOT NULL,
+            source   TEXT NOT NULL,  -- verification | import
+            bound_at INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, user_id),
+            UNIQUE (guild_id, role_id)
+        )
+        """,
+        """
+        INSERT OR IGNORE INTO personal_roles (guild_id, user_id, role_id, source, bound_at)
+        SELECT v.guild_id, v.user_id, v.custom_role_id, 'verification', v.completed_at
+        FROM verification_log v
+        WHERE v.id = (
+            SELECT v2.id FROM verification_log v2
+            WHERE v2.guild_id = v.guild_id AND v2.user_id = v.user_id
+            ORDER BY v2.completed_at DESC, v2.id DESC LIMIT 1
+        )
+        """,
+    ],
 ]
 
 # Статусы pending_verifications
@@ -78,3 +104,7 @@ STATUS_COMPLETED = "completed"
 STATUS_KICKED = "kicked"
 
 ACTIVE_STATUSES = (STATUS_PENDING, STATUS_IN_MODAL)
+
+# Источник привязки personal_roles
+SOURCE_VERIFICATION = "verification"
+SOURCE_IMPORT = "import"

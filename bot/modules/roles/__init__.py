@@ -10,6 +10,7 @@ MODULE = ModuleSpec(
     extensions=(
         "bot.modules.roles.cogs.verification",
         "bot.modules.roles.cogs.setup",
+        "bot.modules.roles.cogs.import_roles",
     ),
     migrations=MIGRATIONS,
 )
