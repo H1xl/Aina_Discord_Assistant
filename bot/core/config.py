@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_MODULES = ("roles",)
+DEFAULT_MODULES = ("roles", "mute_guard")
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,8 @@ class Config:
     connect_code_ttl: int = 600
     # Порог предупреждения о лимите ролей Discord (жёсткий лимит — 250).
     role_limit_threshold: int = 245
+    # Защита от мута: не чаще одного Telegram-уведомления на пользователя, сек.
+    mute_guard_notify_cooldown: int = 900
     # Необязательный ID тестового сервера для мгновенной синхронизации slash-команд.
     test_guild_id: int | None = None
 
@@ -53,5 +55,6 @@ def load_config() -> Config:
         verification_timeout=int(os.getenv("VERIFICATION_TIMEOUT", "600")),
         reminder_interval=int(os.getenv("REMINDER_INTERVAL", "60")),
         connect_code_ttl=int(os.getenv("CONNECT_CODE_TTL", "600")),
+        mute_guard_notify_cooldown=int(os.getenv("MUTE_GUARD_NOTIFY_COOLDOWN", "900")),
         test_guild_id=int(test_guild) if test_guild else None,
     )

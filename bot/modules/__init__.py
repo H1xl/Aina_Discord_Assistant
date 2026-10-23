@@ -27,6 +27,7 @@ class ModuleSpec:
 # Имя модуля → пакет. Порядок важен только для порядка загрузки.
 _REGISTRY = {
     "roles": "bot.modules.roles",
+    "mute_guard": "bot.modules.mute_guard",
 }
 
 ALL_MODULES = tuple(_REGISTRY)
