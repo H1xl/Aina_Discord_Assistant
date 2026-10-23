@@ -7,6 +7,8 @@
 import time
 from typing import Optional
 
+import aiosqlite
+
 from .database import BaseRepository
 
 
@@ -16,26 +18,62 @@ def _now() -> int:
 
 class Repository(BaseRepository):
     # ------------------------------------------------------------------
-    # Telegram-связка
+    # Telegram-связки (многие-ко-многим)
     # ------------------------------------------------------------------
-    async def upsert_telegram_link(self, guild_id: int, telegram_chat_id: int) -> None:
+    async def add_telegram_link(
+        self, guild_id: int, telegram_chat_id: int, chat_title: Optional[str]
+    ) -> bool:
+        """Привязывает чат к серверу. Возвращает False, если связка уже была."""
+        existed = await self._fetchone(
+            "SELECT 1 FROM telegram_links WHERE guild_id = ? AND telegram_chat_id = ?",
+            (guild_id, telegram_chat_id),
+        )
         await self._execute(
             """
-            INSERT INTO guild_telegram_link (guild_id, telegram_chat_id, linked_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(guild_id) DO UPDATE SET
-                telegram_chat_id = excluded.telegram_chat_id,
-                linked_at = excluded.linked_at
+            INSERT INTO telegram_links (guild_id, telegram_chat_id, chat_title, linked_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, telegram_chat_id) DO UPDATE SET
+                chat_title = excluded.chat_title
             """,
-            (guild_id, telegram_chat_id, _now()),
+            (guild_id, telegram_chat_id, chat_title, _now()),
+        )
+        return existed is None
+
+    async def remove_telegram_link(self, guild_id: int, telegram_chat_id: int) -> bool:
+        return bool(await self._execute(
+            "DELETE FROM telegram_links WHERE guild_id = ? AND telegram_chat_id = ?",
+            (guild_id, telegram_chat_id),
+        ))
+
+    async def remove_telegram_chat(self, telegram_chat_id: int) -> None:
+        """Удаляет все связки чата (бота выгнали из чата)."""
+        await self._execute(
+            "DELETE FROM telegram_links WHERE telegram_chat_id = ?", (telegram_chat_id,)
         )
 
-    async def get_telegram_chat_id(self, guild_id: int) -> Optional[int]:
-        row = await self._fetchone(
-            "SELECT telegram_chat_id FROM guild_telegram_link WHERE guild_id = ?",
+    async def migrate_telegram_chat(self, old_chat_id: int, new_chat_id: int) -> None:
+        """Группа превратилась в супергруппу — у неё сменился chat_id."""
+        await self._execute(
+            "UPDATE OR IGNORE telegram_links SET telegram_chat_id = ? WHERE telegram_chat_id = ?",
+            (new_chat_id, old_chat_id),
+        )
+        await self.remove_telegram_chat(old_chat_id)
+
+    async def get_telegram_links(self, guild_id: int) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            "SELECT * FROM telegram_links WHERE guild_id = ? ORDER BY linked_at",
             (guild_id,),
         )
-        return row["telegram_chat_id"] if row else None
+
+    async def get_telegram_chat_ids(self, guild_id: int) -> list[int]:
+        return [row["telegram_chat_id"] for row in await self.get_telegram_links(guild_id)]
+
+    async def get_linked_guild_ids(self, telegram_chat_id: int) -> list[int]:
+        rows = await self._fetchall(
+            "SELECT guild_id FROM telegram_links WHERE telegram_chat_id = ? ORDER BY linked_at",
+            (telegram_chat_id,),
+        )
+        return [row["guild_id"] for row in rows]
 
     # ------------------------------------------------------------------
     # Коды /connect

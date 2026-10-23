@@ -18,11 +18,10 @@ async def send_verification_notice(
     role_name: str,
     inviter: Optional[str],
 ) -> None:
-    """Шлёт уведомление об успешной верификации в привязанный чат."""
+    """Шлёт уведомление об успешной верификации во все привязанные чаты."""
     text = texts.TG_VERIFICATION_NOTICE.format(
-        guild_name=guild_name,
         member=member_display,
         role_name=role_name,
         inviter=inviter or texts.INVITER_NOT_SPECIFIED,
     )
-    await notify_guild(tg_bot, repo, guild_id, text)
+    await notify_guild(tg_bot, repo, guild_id, guild_name, text)

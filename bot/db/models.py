@@ -39,4 +39,26 @@ CORE_MIGRATIONS = [
             ON action_log (guild_id, action, created_at)
         """,
     ],
+    # v2 — связка «многие-ко-многим»: несколько чатов на сервер
+    # и несколько серверов в одном чате.
+    [
+        """
+        CREATE TABLE IF NOT EXISTS telegram_links (
+            guild_id         INTEGER NOT NULL,
+            telegram_chat_id INTEGER NOT NULL,
+            chat_title       TEXT,
+            linked_at        INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, telegram_chat_id)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_telegram_links_chat
+            ON telegram_links (telegram_chat_id)
+        """,
+        """
+        INSERT OR IGNORE INTO telegram_links (guild_id, telegram_chat_id, linked_at)
+        SELECT guild_id, telegram_chat_id, linked_at FROM guild_telegram_link
+        """,
+        "DROP TABLE IF EXISTS guild_telegram_link",
+    ],
 ]
