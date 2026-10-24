@@ -1,7 +1,8 @@
 """Реестр модулей бота.
 
 Модуль — пакет в ``bot/modules/`` с объектом ``MODULE`` (ModuleSpec):
-собственные миграции БД и Discord-расширения (коги). Ядро (БД, привязка Telegram, уведомления) загружается
+собственные миграции БД, Discord-расширения (коги) и, при необходимости,
+Telegram-роутеры. Ядро (БД, привязка Telegram, уведомления) загружается
 всегда; какие модули загружены в процесс — задаёт ``ENABLED_MODULES`` в .env,
 а включены ли они на конкретном сервере — команда ``/modules``
 (по умолчанию — ``default_enabled``).
@@ -23,6 +24,8 @@ class ModuleSpec:
     # Discord-расширения (пути модулей с функцией setup(bot)).
     extensions: Sequence[str]
     migrations: Sequence[Migration] = field(default_factory=list)
+    # Пути модулей с объектом ``router`` (aiogram.Router) для Telegram.
+    telegram_routers: Sequence[str] = ()
     # Включён ли модуль на сервере, пока админ не переключил его в /modules.
     default_enabled: bool = True
     # Короткое описание для меню /modules.

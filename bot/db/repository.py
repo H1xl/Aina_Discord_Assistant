@@ -10,6 +10,7 @@ from typing import Optional
 import aiosqlite
 
 from .database import BaseRepository
+from .models import CODE_KIND_CHAT
 
 
 def _now() -> int:
@@ -79,37 +80,65 @@ class Repository(BaseRepository):
     # Коды /connect
     # ------------------------------------------------------------------
     async def create_connect_code(
-        self, guild_id: int, code: str, created_by: int, ttl_seconds: int
+        self, guild_id: int, code: str, created_by: int, ttl_seconds: int,
+        kind: str = CODE_KIND_CHAT,
     ) -> None:
         await self._execute(
             """
             INSERT OR REPLACE INTO connect_codes
-                (code, guild_id, created_by, expires_at, used)
-            VALUES (?, ?, ?, ?, 0)
+                (code, guild_id, created_by, expires_at, used, kind)
+            VALUES (?, ?, ?, ?, 0, ?)
             """,
-            (code, guild_id, created_by, _now() + ttl_seconds),
+            (code, guild_id, created_by, _now() + ttl_seconds, kind),
         )
 
-    async def use_connect_code(self, code: str) -> Optional[int]:
+    async def use_connect_code(self, code: str) -> Optional[aiosqlite.Row]:
         """Атомарно помечает код использованным.
 
-        Возвращает guild_id, если код существовал, не истёк и не был использован.
+        Возвращает строку (guild_id, created_by, kind), если код существовал,
+        не истёк и не был использован.
         """
         async with self._conn.execute(
             """
             UPDATE connect_codes SET used = 1
             WHERE code = ? AND used = 0 AND expires_at > ?
-            RETURNING guild_id
+            RETURNING guild_id, created_by, kind
             """,
             (code, _now()),
         ) as cur:
             row = await cur.fetchone()
         await self._conn.commit()
-        return row["guild_id"] if row else None
+        return row
 
-    async def cleanup_expired_codes(self) -> None:
+    # ------------------------------------------------------------------
+    # Подтверждённые Telegram-аккаунты администраторов
+    # ------------------------------------------------------------------
+    async def bind_telegram_admin(
+        self, guild_id: int, tg_user_id: int, discord_user_id: int
+    ) -> None:
         await self._execute(
-            "DELETE FROM connect_codes WHERE expires_at <= ? OR used = 1", (_now(),)
+            """
+            INSERT INTO telegram_admins (guild_id, tg_user_id, discord_user_id, linked_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, tg_user_id) DO UPDATE SET
+                discord_user_id = excluded.discord_user_id,
+                linked_at = excluded.linked_at
+            """,
+            (guild_id, tg_user_id, discord_user_id, _now()),
+        )
+
+    async def get_telegram_admin(self, guild_id: int, tg_user_id: int) -> Optional[int]:
+        """Discord ID администратора, которому принадлежит Telegram-аккаунт."""
+        row = await self._fetchone(
+            "SELECT discord_user_id FROM telegram_admins WHERE guild_id = ? AND tg_user_id = ?",
+            (guild_id, tg_user_id),
+        )
+        return row["discord_user_id"] if row else None
+
+    async def get_telegram_admin_guilds(self, tg_user_id: int) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            "SELECT guild_id, discord_user_id FROM telegram_admins WHERE tg_user_id = ?",
+            (tg_user_id,),
         )
 
     # ------------------------------------------------------------------

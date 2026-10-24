@@ -18,6 +18,7 @@ from aiogram.types import (
 )
 
 from bot.core import texts
+from bot.db.models import CODE_KIND_ADMIN
 from bot.db.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -52,10 +53,27 @@ async def _can_manage(bot: Bot, chat: Chat, user_id: int) -> bool:
 
 
 async def _try_link(message: Message, code: str, repo: Repository, discord_bot) -> None:
-    guild_id = await repo.use_connect_code(code.upper())
-    if guild_id is None:
+    row = await repo.use_connect_code(code.upper())
+    if row is None:
         await message.answer(texts.TG_CODE_INVALID)
         return
+    guild_id = row["guild_id"]
+
+    if row["kind"] == CODE_KIND_ADMIN:
+        await repo.bind_telegram_admin(guild_id, message.from_user.id, row["created_by"])
+        await repo.add_action_log(
+            guild_id, "telegram_admin_bound",
+            f"tg_user={message.from_user.id} discord_user={row['created_by']}",
+        )
+        await message.answer(texts.TG_ADMIN_BOUND.format(
+            guild_name=_guild_name(discord_bot, guild_id)
+        ))
+        return
+
+    # Код привязки чата, введённый в личке, заодно подтверждает и самого
+    # администратора, получившего код, — чтобы кнопки работали сразу.
+    if message.chat.type == "private" and message.from_user is not None:
+        await repo.bind_telegram_admin(guild_id, message.from_user.id, row["created_by"])
 
     is_new = await repo.add_telegram_link(guild_id, message.chat.id, _chat_title(message.chat))
     await repo.add_action_log(

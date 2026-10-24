@@ -6,6 +6,7 @@ from typing import Optional
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramMigrateToChat
+from aiogram.types import InlineKeyboardMarkup
 
 from bot.core import texts
 from bot.db.repository import Repository
@@ -31,11 +32,13 @@ async def notify_guild(
     guild_id: int,
     guild_name: str,
     text: str,
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
 ) -> None:
     """Шлёт уведомление во все чаты сервера, с указанием сервера в шапке.
 
     ``text`` — HTML-разметка Telegram: пользовательские данные в нём должны
-    быть экранированы (tg_escape / tg_user). Ошибки Telegram не пробрасываются:
+    быть экранированы (tg_escape / tg_user). ``reply_markup`` — кнопки действий
+    (обрабатываются Telegram-роутером модуля). Ошибки Telegram не пробрасываются:
     уведомление не должно ломать основное действие в Discord.
     """
     if tg_bot is None:
@@ -43,12 +46,17 @@ async def notify_guild(
     message = texts.TG_GUILD_HEADER.format(guild_name=tg_escape(guild_name)) + "\n\n" + text
     for chat_id in await repo.get_telegram_chat_ids(guild_id):
         try:
-            await tg_bot.send_message(chat_id, message, parse_mode="HTML")
+            await tg_bot.send_message(
+                chat_id, message, parse_mode="HTML", reply_markup=reply_markup
+            )
         except TelegramMigrateToChat as exc:
             # Группа стала супергруппой — переносим связки на новый id.
             await repo.migrate_telegram_chat(chat_id, exc.migrate_to_chat_id)
             try:
-                await tg_bot.send_message(exc.migrate_to_chat_id, message, parse_mode="HTML")
+                await tg_bot.send_message(
+                    exc.migrate_to_chat_id, message, parse_mode="HTML",
+                    reply_markup=reply_markup,
+                )
             except Exception:
                 log.exception("Не удалось отправить в мигрированный чат %s",
                               exc.migrate_to_chat_id)

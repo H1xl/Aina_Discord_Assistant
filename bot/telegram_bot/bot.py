@@ -1,5 +1,6 @@
 """Фабрика Telegram-бота (aiogram 3)."""
 
+import importlib
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -35,4 +36,9 @@ def create_dispatcher(repo: Repository, discord_bot) -> Dispatcher:
     dp["discord_bot"] = discord_bot
     dp.startup.register(_set_commands)
     dp.include_router(link_router)
+    # Роутеры модулей, загруженных в процесс (включённость на конкретном
+    # сервере каждый обработчик проверяет сам).
+    for module in discord_bot.modules:
+        for path in module.telegram_routers:
+            dp.include_router(importlib.import_module(path).router)
     return dp

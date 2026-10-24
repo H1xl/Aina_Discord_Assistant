@@ -8,6 +8,7 @@ SQL-выражений; её номер — позиция в списке (с 1
 """
 
 import logging
+import sqlite3
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -57,7 +58,13 @@ class Database:
             if version <= current:
                 continue
             for statement in statements:
-                await self.conn.execute(statement)
+                try:
+                    await self.conn.execute(statement)
+                except sqlite3.OperationalError as exc:
+                    # ALTER TABLE ADD COLUMN не бывает «IF NOT EXISTS» —
+                    # при повторном прогоне колонка уже есть, это не ошибка.
+                    if "duplicate column name" not in str(exc):
+                        raise
             await self.conn.execute(
                 """
                 INSERT INTO schema_versions (namespace, version) VALUES (?, ?)

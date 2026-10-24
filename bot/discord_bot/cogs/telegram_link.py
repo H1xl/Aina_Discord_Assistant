@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.core import texts
+from bot.db.models import CODE_KIND_ADMIN
 from bot.discord_bot.helpers import deny_admin, expire_view_message, is_admin, respond
 
 # Без похожих символов (0/O, 1/I), чтобы код было легко перепечатать.
@@ -140,6 +141,34 @@ class TelegramLinkCog(commands.Cog):
         )
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
         view.message = await interaction.original_response()
+
+    @app_commands.command(
+        name="telegram-me",
+        description="Подтвердить свой Telegram, чтобы нажимать кнопки в уведомлениях (админ)",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    async def telegram_me_command(self, interaction: discord.Interaction) -> None:
+        if not is_admin(interaction):
+            await deny_admin(interaction)
+            return
+        await self.repo.cleanup_expired_codes()
+        code = generate_code()
+        await self.repo.create_connect_code(
+            guild_id=interaction.guild.id,
+            code=code,
+            created_by=interaction.user.id,
+            ttl_seconds=self.config.connect_code_ttl,
+            kind=CODE_KIND_ADMIN,
+        )
+        embed = discord.Embed(
+            title=texts.TG_ME_TITLE,
+            description=texts.TG_ME_CODE_TEXT.format(
+                code=code, minutes=self.config.connect_code_ttl // 60
+            ),
+            colour=texts.EMBED_COLOR,
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def unlink_chats(self, interaction: discord.Interaction, chat_ids: list[int]) -> None:
         guild_id = interaction.guild.id

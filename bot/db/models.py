@@ -72,4 +72,22 @@ CORE_MIGRATIONS = [
         )
         """,
     ],
+    # v4 — подтверждённые Telegram-аккаунты администраторов (для кнопок
+    # действий в уведомлениях) и тип кода /connect.
+    [
+        """
+        CREATE TABLE IF NOT EXISTS telegram_admins (
+            guild_id        INTEGER NOT NULL,
+            tg_user_id      INTEGER NOT NULL,
+            discord_user_id INTEGER NOT NULL,
+            linked_at       INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, tg_user_id)
+        )
+        """,
+        # chat — привязка чата (/connect), admin — подтверждение админа (/telegram-me)
+        "ALTER TABLE connect_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'",
+    ],
 ]
+
+CODE_KIND_CHAT = "chat"
+CODE_KIND_ADMIN = "admin"
