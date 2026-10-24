@@ -10,4 +10,5 @@ MODULE = ModuleSpec(
     description="снимаю мут, звук и тайм-аут, возвращаю перетащенных, сообщаю в Telegram",
     extensions=("bot.modules.mute_guard.cog",),
     migrations=MIGRATIONS,
+    telegram_routers=("bot.modules.mute_guard.telegram",),
 )

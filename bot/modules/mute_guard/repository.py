@@ -35,6 +35,21 @@ class MuteGuardRepository(Repository):
             (guild_id, user_id, protected_by, _now(), expires_at, 1 if notify else 0, guards),
         )
 
+    async def extend_protection(
+        self, guild_id: int, user_id: int, seconds: int
+    ) -> Optional[int]:
+        """Продлевает срочную защиту; возвращает новый expires_at (None — защиты нет
+        или она бессрочная)."""
+        row = await self.get_protection(guild_id, user_id)
+        if row is None or row["expires_at"] is None:
+            return None
+        expires_at = max(row["expires_at"], _now()) + seconds
+        await self._execute(
+            "UPDATE mute_protections SET expires_at = ? WHERE guild_id = ? AND user_id = ?",
+            (expires_at, guild_id, user_id),
+        )
+        return expires_at
+
     async def protected_guild_ids(self) -> list[int]:
         rows = await self._fetchall(
             """

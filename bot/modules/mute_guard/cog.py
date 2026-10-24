@@ -8,7 +8,8 @@
 - timeout — тайм-аут снимается сразу.
 
 При включённых уведомлениях бот пишет в привязанные Telegram-чаты, кто
-помешал (по журналу аудита), не чаще раза в MUTE_GUARD_NOTIFY_COOLDOWN.
+помешал (по журналу аудита), не чаще раза в MUTE_GUARD_NOTIFY_COOLDOWN,
+и добавляет кнопки действий (снять/продлить защиту, наказать виновника).
 Собственные mute/deafen участника (self_mute/self_deaf) не трогаем.
 """
 
@@ -35,6 +36,7 @@ from bot.modules.mute_guard.models import (
     parse_guards,
 )
 from bot.modules.mute_guard.repository import MuteGuardRepository
+from bot.modules.mute_guard.telegram import attempt_keyboard
 from bot.modules.mute_guard.views import (
     ProtectView,
     UnprotectView,
@@ -79,6 +81,8 @@ class MuteGuardCog(ModuleCog):
         # действие только что совершил кто-то, храним последний виденный
         # count каждой записи: guild_id → {entry_id: count}.
         self.audit_counts: dict[int, dict[int, int]] = {}
+        # Тайм-ауты, которые бот выдаёт сам (кнопка в Telegram), — их не снимаем.
+        self.own_timeouts: set[Key] = set()
         self.cleanup_expired.start()
 
     def cog_unload(self) -> None:
@@ -361,6 +365,9 @@ class MuteGuardCog(ModuleCog):
             return
         guild = after.guild
         key = (guild.id, after.id)
+        if key in self.own_timeouts:
+            self.own_timeouts.discard(key)
+            return
         if not await self.module_enabled(guild.id):
             return
         async with self._lock(key):
@@ -415,6 +422,16 @@ class MuteGuardCog(ModuleCog):
             log.warning("Не удалось снять тайм-аут с %s: %s", member.id, exc)
             return False
         return True
+
+    async def timeout_actor(self, actor: discord.Member, minutes: int, reason: str) -> None:
+        """Тайм-аут от имени бота (кнопка в Telegram) — защита его не снимает."""
+        key = (actor.guild.id, actor.id)
+        self.own_timeouts.add(key)
+        try:
+            await actor.timeout(dt.timedelta(minutes=minutes), reason=reason)
+        except Exception:
+            self.own_timeouts.discard(key)
+            raise
 
     # ------------------------------------------------------------------
     # Журнал аудита
@@ -521,7 +538,8 @@ class MuteGuardCog(ModuleCog):
         actor,
         result: str,
     ) -> None:
-        """``actor`` — участник Discord или готовая HTML-строка («неизвестно…»)."""
+        """``actor`` — участник Discord (тогда под уведомлением кнопки наказания)
+        или готовая HTML-строка («неизвестно…»)."""
         guild = member.guild
         cooldown = self.config.mute_guard_notify_cooldown
         last = protection["last_notified_at"]
@@ -543,7 +561,12 @@ class MuteGuardCog(ModuleCog):
         text += texts.TG_ATTEMPT_COOLDOWN.format(minutes=cooldown // 60)
 
         await self.repo.mark_notified(guild.id, member.id)
-        await notify_guild(self.bot.tg_bot, self.repo, guild.id, guild.name, text)
+        markup = attempt_keyboard(
+            guild.id, member.id,
+            actor_user.id if actor_user else None,
+            can_extend=protection["expires_at"] is not None,
+        )
+        await notify_guild(self.bot.tg_bot, self.repo, guild.id, guild.name, text, markup)
 
     async def _notify_failed(
         self, member: discord.Member, protection, icon: str, action: str, reason: str
