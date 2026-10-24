@@ -36,6 +36,7 @@ class ModuleSpec:
 _REGISTRY = {
     "roles": "bot.modules.roles",
     "mute_guard": "bot.modules.mute_guard",
+    "voice_notify": "bot.modules.voice_notify",
 }
 
 ALL_MODULES = tuple(_REGISTRY)
