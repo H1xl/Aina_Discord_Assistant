@@ -13,6 +13,11 @@ from bot.modules import load_modules
 
 log = logging.getLogger(__name__)
 
+# Бот не подключается к голосовым каналам (заглушение снимается через REST API),
+# поэтому PyNaCl/davey не нужны — гасим предупреждения об их отсутствии.
+discord.VoiceClient.warn_nacl = False
+discord.VoiceClient.warn_dave = False
+
 # Коги ядра — загружаются всегда.
 CORE_COGS = (
     "bot.discord_bot.cogs.telegram_link",
@@ -25,8 +30,10 @@ class AinaBot(commands.Bot):
         intents.members = True  # обязателен для on_member_join/on_member_remove
         # voice_states (защита от мута) входит в Intents.default().
         # message_content не нужен: бот работает только на slash-командах.
+        # Префикс «по упоминанию» — заглушка: текстовых команд нет, и с ним
+        # discord.py не предупреждает об отсутствии message_content.
         super().__init__(
-            command_prefix="!",
+            command_prefix=commands.when_mentioned,
             intents=intents,
             help_command=None,
             activity=discord.Activity(
