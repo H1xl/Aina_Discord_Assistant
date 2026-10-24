@@ -1,15 +1,17 @@
 """Фабрика Discord-бота: intents, коги ядра и модулей, синхронизация slash-команд."""
 
 import logging
+from typing import Optional
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from bot.core import texts
 from bot.core.config import Config
 from bot.db.database import Database
 from bot.db.repository import Repository
-from bot.modules import load_modules
+from bot.modules import ModuleSpec, load_modules
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ discord.VoiceClient.warn_dave = False
 # Коги ядра — загружаются всегда.
 CORE_COGS = (
     "bot.discord_bot.cogs.telegram_link",
+    "bot.discord_bot.cogs.modules",
 )
 
 
@@ -45,8 +48,27 @@ class AinaBot(commands.Bot):
         self.repo = repo  # репозиторий ядра; модули создают свои поверх self.db
         self.tg_bot = None  # aiogram.Bot, проставляется в main.py
         self.modules = load_modules(config.enabled_modules)
+        # guild_id → {модуль: включён}; заполняется лениво из guild_modules.
+        self._guild_modules: dict[int, dict[str, bool]] = {}
+
+    def get_module(self, name: str) -> Optional[ModuleSpec]:
+        return next((m for m in self.modules if m.name == name), None)
+
+    async def is_module_enabled(self, guild_id: int, name: str) -> bool:
+        """Включён ли модуль на сервере (загружен в процесс и не выключен в /modules)."""
+        module = self.get_module(name)
+        if module is None:
+            return False
+        if guild_id not in self._guild_modules:
+            self._guild_modules[guild_id] = await self.repo.get_guild_modules(guild_id)
+        return self._guild_modules[guild_id].get(name, module.default_enabled)
+
+    async def set_module_enabled(self, guild_id: int, name: str, enabled: bool) -> None:
+        await self.repo.set_guild_module(guild_id, name, enabled)
+        self._guild_modules.pop(guild_id, None)
 
     async def setup_hook(self) -> None:
+        self.tree.on_error = self._on_app_command_error
         for cog in CORE_COGS:
             await self.load_extension(cog)
         for module in self.modules:
@@ -63,6 +85,16 @@ class AinaBot(commands.Bot):
                      self.config.test_guild_id)
         await self.tree.sync()
         log.info("Глобальная синхронизация slash-команд запрошена")
+
+    async def _on_app_command_error(
+        self, interaction: discord.Interaction, error: app_commands.AppCommandError
+    ) -> None:
+        # Отказ проверки (модуль выключен, нет прав) уже объяснён пользователю
+        # в самой проверке — в лог его не пишем.
+        if isinstance(error, app_commands.CheckFailure):
+            return
+        log.error("Ошибка slash-команды %s", interaction.command and interaction.command.name,
+                  exc_info=error)
 
     async def on_ready(self) -> None:
         log.info("Discord-бот вошёл как %s (id=%s)", self.user, self.user.id)

@@ -18,6 +18,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.discord_bot.helpers import deny_admin, is_admin, respond
+from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.mute_guard import texts
 from bot.modules.mute_guard.repository import MuteGuardRepository
 from bot.modules.mute_guard.views import ProtectView, UnprotectView, format_until
@@ -40,10 +41,11 @@ def _member_display(member: discord.abc.User) -> str:
     return tg_user(member.display_name, member.name)
 
 
-class MuteGuardCog(commands.Cog):
+class MuteGuardCog(ModuleCog):
+    module_name = "mute_guard"
+
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
-        self.config = bot.config
+        super().__init__(bot)
         self.repo = MuteGuardRepository(bot.db)
         # Сериализуем обработку событий одного участника: при «войне»
         # мута события сыплются пачкой.
@@ -175,6 +177,8 @@ class MuteGuardCog(commands.Cog):
         if after.channel is None or not (after.mute or after.deaf):
             return
         guild = member.guild
+        if not await self.module_enabled(guild.id):
+            return
         async with self._lock((guild.id, member.id)):
             protection = await self.repo.get_protection(guild.id, member.id)
             if protection is None:

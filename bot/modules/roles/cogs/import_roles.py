@@ -12,6 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.discord_bot.helpers import deny_admin, is_admin, with_backoff
+from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.roles import models, texts
 from bot.modules.roles.repository import RolesRepository
 from bot.modules.roles.views.import_roles import ImportRolesView, RoleEntry, analyze_roles
@@ -19,9 +20,11 @@ from bot.modules.roles.views.import_roles import ImportRolesView, RoleEntry, ana
 log = logging.getLogger(__name__)
 
 
-class ImportRolesCog(commands.Cog):
+class ImportRolesCog(ModuleCog):
+    module_name = "roles"
+
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.repo = RolesRepository(bot.db)
 
     @app_commands.command(

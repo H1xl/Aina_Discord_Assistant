@@ -7,6 +7,7 @@ from .models import MIGRATIONS, NAMESPACE
 MODULE = ModuleSpec(
     name=NAMESPACE,
     title="Автоматическая выдача ролей",
+    description="встречаю новичков, оформляю именные роли, возвращаю роли вернувшимся",
     extensions=(
         "bot.modules.roles.cogs.verification",
         "bot.modules.roles.cogs.setup",

@@ -61,4 +61,15 @@ CORE_MIGRATIONS = [
         """,
         "DROP TABLE IF EXISTS guild_telegram_link",
     ],
+    # v3 — включение модулей по серверам (/modules).
+    [
+        """
+        CREATE TABLE IF NOT EXISTS guild_modules (
+            guild_id INTEGER NOT NULL,
+            module   TEXT NOT NULL,
+            enabled  INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, module)
+        )
+        """,
+    ],
 ]

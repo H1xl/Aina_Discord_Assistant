@@ -7,6 +7,7 @@ from .models import MIGRATIONS, NAMESPACE
 MODULE = ModuleSpec(
     name=NAMESPACE,
     title="Защита от мута",
+    description="снимаю с защищённых мут и отключение звука, сообщаю в Telegram",
     extensions=("bot.modules.mute_guard.cog",),
     migrations=MIGRATIONS,
 )

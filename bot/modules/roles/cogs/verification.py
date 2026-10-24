@@ -18,6 +18,7 @@ from bot.discord_bot.helpers import (
     respond,
     with_backoff,
 )
+from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.roles import models, texts
 from bot.modules.roles.notify import send_verification_notice
 from bot.modules.roles.repository import RolesRepository
@@ -42,11 +43,12 @@ def _directly_below(
     return low < high and not any(low < _display_order(r) < high for r in roles)
 
 
-class VerificationCog(commands.Cog):
+class VerificationCog(ModuleCog):
+    module_name = "roles"
+
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.repo = RolesRepository(bot.db)
-        self.config = bot.config
         # Активные таймеры верификации и локи от двойных нажатий — в памяти;
         # источник истины — pending_verifications в БД (восстанавливается при старте).
         self.timers: dict[Key, asyncio.Task] = {}
@@ -229,7 +231,7 @@ class VerificationCog(commands.Cog):
     # ------------------------------------------------------------------
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
-        if member.bot:
+        if member.bot or not await self.module_enabled(member.guild.id):
             return
         guild = member.guild
         settings = await self.repo.get_settings(guild.id)
@@ -266,6 +268,8 @@ class VerificationCog(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
         guild = member.guild
+        if member.bot or not await self.module_enabled(guild.id):
+            return
         row = await self.repo.get_pending(guild.id, member.id)
         if row is None or row["status"] not in models.ACTIVE_STATUSES:
             return
@@ -297,6 +301,8 @@ class VerificationCog(commands.Cog):
         # Финальный шаг верификации выдаёт роли под этим локом и закрывает
         # pending до его освобождения — собственные выдачи бота не трогаем.
         if self._lock((guild.id, after.id)).locked():
+            return
+        if not await self.module_enabled(guild.id):
             return
         row = await self.repo.get_pending(guild.id, after.id)
         if row is None or row["status"] not in models.ACTIVE_STATUSES:

@@ -113,6 +113,30 @@ class Repository(BaseRepository):
         )
 
     # ------------------------------------------------------------------
+    # Модули по серверам
+    # ------------------------------------------------------------------
+    async def get_guild_modules(self, guild_id: int) -> dict[str, bool]:
+        """Явно заданные состояния модулей сервера (остальные — по умолчанию)."""
+        rows = await self._fetchall(
+            "SELECT module, enabled FROM guild_modules WHERE guild_id = ?", (guild_id,)
+        )
+        return {row["module"]: bool(row["enabled"]) for row in rows}
+
+    async def set_guild_module(self, guild_id: int, module: str, enabled: bool) -> None:
+        await self._execute(
+            """
+            INSERT INTO guild_modules (guild_id, module, enabled) VALUES (?, ?, ?)
+            ON CONFLICT(guild_id, module) DO UPDATE SET enabled = excluded.enabled
+            """,
+            (guild_id, module, 1 if enabled else 0),
+        )
+
+    async def cleanup_expired_codes(self) -> None:
+        await self._execute(
+            "DELETE FROM connect_codes WHERE expires_at <= ? OR used = 1", (_now(),)
+        )
+
+    # ------------------------------------------------------------------
     # Журнал действий
     # ------------------------------------------------------------------
     async def add_action_log(

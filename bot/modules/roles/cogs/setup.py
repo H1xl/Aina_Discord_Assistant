@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.discord_bot.helpers import deny_admin
+from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.roles import texts
 from bot.modules.roles.repository import RolesRepository
 from bot.modules.roles.views.selects import (
@@ -19,11 +20,12 @@ from bot.modules.roles.views.selects import (
 log = logging.getLogger(__name__)
 
 
-class SetupCog(commands.Cog):
+class SetupCog(ModuleCog):
+    module_name = "roles"
+
     def __init__(self, bot: commands.Bot):
-        self.bot = bot
+        super().__init__(bot)
         self.repo = RolesRepository(bot.db)
-        self.config = bot.config
 
     # Discord modal поддерживает только текстовые поля, поэтому /setup —
     # это ephemeral-сообщение с ChannelSelect/RoleSelect. В один View
