@@ -24,6 +24,7 @@ discord.VoiceClient.warn_dave = False
 CORE_COGS = (
     "bot.discord_bot.cogs.telegram_link",
     "bot.discord_bot.cogs.modules",
+    "bot.discord_bot.cogs.help",
 )
 
 

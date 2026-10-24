@@ -9,12 +9,14 @@ from aiogram.types import BotCommand
 from bot.core import texts
 from bot.core.config import Config
 from bot.db.repository import Repository
+from bot.telegram_bot.handlers.help import router as help_router
 from bot.telegram_bot.handlers.link import router as link_router
 
 log = logging.getLogger(__name__)
 
-# Команды ядра: (команда, описание) — для меню бота.
+# Команды ядра: (команда, описание) — для меню бота и /help.
 CORE_COMMANDS = (
+    ("help", texts.TG_CMD_HELP),
     ("start", texts.TG_CMD_START),
     ("servers", texts.TG_CMD_SERVERS),
     ("unlink", texts.TG_CMD_UNLINK),
@@ -49,6 +51,7 @@ def create_dispatcher(repo: Repository, discord_bot) -> Dispatcher:
     dp["repo"] = repo
     dp["discord_bot"] = discord_bot
     dp.startup.register(_set_commands)
+    dp.include_router(help_router)
     dp.include_router(link_router)
     # Роутеры модулей, загруженных в процесс (включённость на конкретном
     # сервере каждый обработчик проверяет сам).
