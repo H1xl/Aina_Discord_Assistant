@@ -21,4 +21,26 @@ MIGRATIONS = [
         )
         """,
     ],
+    # v2 — от каких действий защищать (выбирается в /protect).
+    [
+        "ALTER TABLE mute_protections ADD COLUMN guards TEXT NOT NULL DEFAULT 'mute,deaf'",
+    ],
 ]
+
+# Защищаемые действия (значения колонки guards через запятую).
+GUARD_MUTE = "mute"              # server mute — снимаем
+GUARD_DEAF = "deaf"              # server deafen — снимаем
+GUARD_MOVE = "move"              # перетаскивание в другой канал — возвращаем
+GUARD_DISCONNECT = "disconnect"  # отключение от голоса — только уведомляем
+GUARD_TIMEOUT = "timeout"        # тайм-аут — снимаем
+
+ALL_GUARDS = (GUARD_MUTE, GUARD_DEAF, GUARD_MOVE, GUARD_DISCONNECT, GUARD_TIMEOUT)
+DEFAULT_GUARDS = (GUARD_MUTE, GUARD_DEAF)
+
+
+def parse_guards(value: str) -> set[str]:
+    return {guard for guard in (value or "").split(",") if guard in ALL_GUARDS}
+
+
+def serialize_guards(guards) -> str:
+    return ",".join(guard for guard in ALL_GUARDS if guard in guards)

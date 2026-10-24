@@ -15,23 +15,35 @@ class MuteGuardRepository(Repository):
         protected_by: int,
         expires_at: Optional[int],
         notify: bool,
+        guards: str,
     ) -> None:
         await self._execute(
             """
             INSERT INTO mute_protections
                 (guild_id, user_id, protected_by, created_at, expires_at, notify,
-                 last_notified_at, suppressed_attempts)
-            VALUES (?, ?, ?, ?, ?, ?, NULL, 0)
+                 last_notified_at, suppressed_attempts, guards)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?)
             ON CONFLICT(guild_id, user_id) DO UPDATE SET
                 protected_by = excluded.protected_by,
                 created_at = excluded.created_at,
                 expires_at = excluded.expires_at,
                 notify = excluded.notify,
                 last_notified_at = NULL,
-                suppressed_attempts = 0
+                suppressed_attempts = 0,
+                guards = excluded.guards
             """,
-            (guild_id, user_id, protected_by, _now(), expires_at, 1 if notify else 0),
+            (guild_id, user_id, protected_by, _now(), expires_at, 1 if notify else 0, guards),
         )
+
+    async def protected_guild_ids(self) -> list[int]:
+        rows = await self._fetchall(
+            """
+            SELECT DISTINCT guild_id FROM mute_protections
+            WHERE expires_at IS NULL OR expires_at > ?
+            """,
+            (_now(),),
+        )
+        return [row["guild_id"] for row in rows]
 
     async def get_protection(self, guild_id: int, user_id: int) -> Optional[aiosqlite.Row]:
         """Действующая (не истёкшая) защита участника."""

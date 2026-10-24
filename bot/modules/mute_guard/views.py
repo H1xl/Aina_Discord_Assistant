@@ -12,6 +12,7 @@ import discord
 
 from bot.discord_bot.helpers import expire_view_message, respond
 from bot.modules.mute_guard import texts
+from bot.modules.mute_guard.models import ALL_GUARDS, DEFAULT_GUARDS, serialize_guards
 
 if TYPE_CHECKING:
     from bot.modules.mute_guard.cog import MuteGuardCog
@@ -42,6 +43,10 @@ def format_until(expires_at: Optional[int]) -> str:
     if expires_at is None:
         return texts.DURATION_INFINITE
     return texts.PROTECT_UNTIL.format(time=f"<t:{expires_at}:f>", relative=f"<t:{expires_at}:R>")
+
+
+def format_guards(guards) -> str:
+    return ", ".join(texts.GUARD_LABELS[g][2] for g in ALL_GUARDS if g in guards)
 
 
 def parse_minutes(value: str) -> Optional[int]:
@@ -87,6 +92,7 @@ class ProtectView(discord.ui.View):
         self.member: Optional[discord.Member] = None
         self.minutes = DEFAULT_MINUTES
         self.notify = True
+        self.guards: set[str] = set(DEFAULT_GUARDS)
         self.message: Optional[discord.Message] = None
         self._finished = False
         self._build()
@@ -122,6 +128,29 @@ class ProtectView(discord.ui.View):
         user_select.callback = on_user
         self.add_item(user_select)
 
+        guards_select = discord.ui.Select(
+            placeholder=texts.PROTECT_GUARDS_PLACEHOLDER,
+            min_values=1,
+            max_values=len(ALL_GUARDS),
+            options=[
+                discord.SelectOption(
+                    label=texts.GUARD_LABELS[g][0],
+                    description=texts.GUARD_LABELS[g][1],
+                    value=g,
+                    default=g in self.guards,
+                )
+                for g in ALL_GUARDS
+            ],
+            row=1,
+        )
+
+        async def on_guards(interaction: discord.Interaction) -> None:
+            self.guards = set(guards_select.values)
+            await self.refresh(interaction)
+
+        guards_select.callback = on_guards
+        self.add_item(guards_select)
+
         presets = list(DURATION_PRESETS)
         if self.minutes not in presets:
             presets.insert(0, self.minutes)  # своё значение — тоже как пункт меню
@@ -133,7 +162,7 @@ class ProtectView(discord.ui.View):
                 )
                 for m in presets
             ],
-            row=1,
+            row=2,
         )
 
         async def on_duration(interaction: discord.Interaction) -> None:
@@ -156,7 +185,7 @@ class ProtectView(discord.ui.View):
                     label=texts.PROTECT_NOTIFY_OFF, value="0", default=not self.notify
                 ),
             ],
-            row=2,
+            row=3,
         )
 
         async def on_notify(interaction: discord.Interaction) -> None:
@@ -167,7 +196,7 @@ class ProtectView(discord.ui.View):
         self.add_item(notify_select)
 
         custom = discord.ui.Button(
-            label=texts.PROTECT_CUSTOM_BUTTON, style=discord.ButtonStyle.secondary, row=3
+            label=texts.PROTECT_CUSTOM_BUTTON, style=discord.ButtonStyle.secondary, row=4
         )
 
         async def on_custom(interaction: discord.Interaction) -> None:
@@ -177,7 +206,7 @@ class ProtectView(discord.ui.View):
         self.add_item(custom)
 
         apply = discord.ui.Button(
-            label=texts.PROTECT_APPLY_BUTTON, style=discord.ButtonStyle.success, row=3
+            label=texts.PROTECT_APPLY_BUTTON, style=discord.ButtonStyle.success, row=4
         )
         apply.callback = self._on_apply
         self.add_item(apply)
@@ -187,6 +216,7 @@ class ProtectView(discord.ui.View):
             title=texts.PROTECT_TITLE,
             description=texts.PROTECT_PROMPT.format(
                 user=self.member.mention if self.member else texts.PROTECT_NOT_CHOSEN,
+                guards=format_guards(self.guards),
                 duration=format_minutes(self.minutes),
                 notify=texts.PROTECT_NOTIFY_ON if self.notify else texts.PROTECT_NOTIFY_OFF,
             ),
@@ -204,7 +234,9 @@ class ProtectView(discord.ui.View):
         self._finished = True
         self.stop()
         expires_at = None if self.minutes == INFINITE else int(time.time()) + self.minutes * 60
-        await self.cog.apply_protection(interaction, self.member, expires_at, self.notify)
+        await self.cog.apply_protection(
+            interaction, self.member, expires_at, self.notify, serialize_guards(self.guards)
+        )
 
 
 class UnprotectView(discord.ui.View):
