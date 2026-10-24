@@ -1,7 +1,9 @@
 """Основной флоу верификации: on_member_join, напоминания, кик, /role."""
 
 import asyncio
+import datetime as dt
 import logging
+import math
 import time
 from typing import Optional
 
@@ -280,6 +282,125 @@ class VerificationCog(commands.Cog):
             guild,
             texts.LEFT_LOG_TITLE,
             texts.LEFT_LOG_TEXT.format(user=f"{member.mention} (`{member}`)"),
+            texts.EMBED_COLOR_WARNING,
+        )
+
+    # ------------------------------------------------------------------
+    # Защита от ручной выдачи ролей во время верификации
+    # ------------------------------------------------------------------
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        added = [role for role in after.roles if role not in before.roles]
+        if not added or after.bot:
+            return
+        guild = after.guild
+        # Финальный шаг верификации выдаёт роли под этим локом и закрывает
+        # pending до его освобождения — собственные выдачи бота не трогаем.
+        if self._lock((guild.id, after.id)).locked():
+            return
+        row = await self.repo.get_pending(guild.id, after.id)
+        if row is None or row["status"] not in models.ACTIVE_STATUSES:
+            return
+
+        guarded = set(await self.repo.get_mandatory_roles(guild.id))
+        guarded |= set(await self.repo.get_optional_roles(guild.id))
+        revoked = [role for role in added if role.id in guarded]
+        if not revoked:
+            return
+
+        failed = await remove_roles_safe(
+            after, revoked, reason="Роли выдаются только после верификации (/role)"
+        )
+        removed = [role for role in revoked if role not in failed]
+        if failed:
+            await self._log_to_channel(
+                guild,
+                "⚠️ Не хватает прав",
+                texts.LOG_MANUAL_REVOKE_FAILED.format(
+                    user=f"{after.mention} (`{after}`)",
+                    roles=", ".join(role.mention for role in failed),
+                ),
+                texts.EMBED_COLOR_WARNING,
+            )
+        if not removed:
+            return
+
+        actor = await self._find_role_actor(guild, after, removed)
+        if actor is not None and actor.id == self.bot.user.id:
+            return
+        await self.repo.add_action_log(
+            guild.id, "manual_roles_revoked",
+            f"user_id={after.id} by={actor.id if actor else None} "
+            f"roles={','.join(str(role.id) for role in removed)}",
+        )
+        await self._warn_manual_roles(guild, after, actor, removed, row["joined_at"])
+
+    async def _find_role_actor(
+        self, guild: discord.Guild, member: discord.Member, roles: list[discord.Role]
+    ) -> Optional[discord.abc.User]:
+        """Ищет в журнале аудита, кто выдал участнику роли (None — не удалось)."""
+        await asyncio.sleep(1.5)  # запись в журнале появляется чуть позже события
+        role_ids = {role.id for role in roles}
+        since = discord.utils.utcnow() - dt.timedelta(minutes=2)
+        try:
+            async for entry in guild.audit_logs(
+                limit=20, action=discord.AuditLogAction.member_role_update
+            ):
+                if entry.created_at < since:
+                    break
+                if entry.target is None or entry.target.id != member.id:
+                    continue
+                if role_ids & {role.id for role in getattr(entry.after, "roles", [])}:
+                    return entry.user
+        except discord.HTTPException as exc:
+            log.info("Не удалось прочитать журнал аудита %s: %s", guild.id, exc)
+        return None
+
+    async def _warn_manual_roles(
+        self,
+        guild: discord.Guild,
+        member: discord.Member,
+        actor: Optional[discord.abc.User],
+        roles: list[discord.Role],
+        joined_at: int,
+    ) -> None:
+        minutes_left = max(
+            1, math.ceil((joined_at + self.config.verification_timeout - time.time()) / 60)
+        )
+        role_list = ", ".join(role.mention for role in roles)
+        template = texts.MANUAL_ROLES_TEXT if actor else texts.MANUAL_ROLES_TEXT_UNKNOWN
+        embed = discord.Embed(
+            title=texts.MANUAL_ROLES_TITLE,
+            description=template.format(
+                admin=actor.mention if actor else "",
+                member=member.mention,
+                roles=role_list,
+                command=await self._role_command_mention(guild),
+                minutes=minutes_left,
+            ),
+            colour=texts.EMBED_COLOR_WARNING,
+        )
+        settings = await self.repo.get_settings(guild.id)
+        pings_channel = self._get_text_channel(
+            guild, settings["pings_channel_id"] if settings else None
+        )
+        if pings_channel is not None:
+            # Пингуем только администратора — участника в этом сообщении не зовём.
+            await with_backoff(lambda: pings_channel.send(
+                content=actor.mention if actor else None,
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions(
+                    users=[actor] if actor else False, roles=False, everyone=False
+                ),
+            ))
+        await self._log_to_channel(
+            guild,
+            texts.LOG_MANUAL_ROLES_TITLE,
+            texts.LOG_MANUAL_ROLES_TEXT.format(
+                admin=f"{actor.mention} (`{actor}`)" if actor else texts.ACTOR_UNKNOWN,
+                user=f"{member.mention} (`{member}`)",
+                roles=role_list,
+            ),
             texts.EMBED_COLOR_WARNING,
         )
 
