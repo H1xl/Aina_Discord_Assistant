@@ -45,6 +45,8 @@ class VerificationCog(commands.Cog):
         self.timers: dict[Key, asyncio.Task] = {}
         self.locks: dict[Key, asyncio.Lock] = {}
         self._restored = False
+        # guild_id → кликабельное упоминание </role:ID> (ID команды у Discord).
+        self._role_mentions: dict[int, str] = {}
 
     def cog_unload(self) -> None:
         for task in self.timers.values():
@@ -124,6 +126,30 @@ class VerificationCog(commands.Cog):
         if no_role.id != settings["no_role_id"]:
             await self.repo.set_no_role_id(guild.id, no_role.id)
         return no_role
+
+    async def _role_command_mention(self, guild: discord.Guild) -> str:
+        """Кликабельное упоминание /role; при неудаче — просто `/role`.
+
+        Если команды синхронизированы с сервером (TEST_GUILD_ID), у серверной
+        копии свой ID — поэтому сначала ищем среди команд сервера.
+        """
+        if guild.id in self._role_mentions:
+            return self._role_mentions[guild.id]
+        mention = None
+        try:
+            scopes = [guild, None] if guild.id == self.config.test_guild_id else [None]
+            for scope in scopes:
+                command = discord.utils.get(
+                    await self.bot.tree.fetch_commands(guild=scope), name="role"
+                )
+                if command is not None:
+                    mention = command.mention
+                    break
+        except discord.HTTPException as exc:
+            log.info("Не удалось получить ID команды /role: %s", exc)
+            return "`/role`"
+        self._role_mentions[guild.id] = mention or "`/role`"
+        return self._role_mentions[guild.id]
 
     async def _position_role_below_bot(
         self, guild: discord.Guild, role: discord.Role
@@ -315,11 +341,13 @@ class VerificationCog(commands.Cog):
 
         first = row["last_reminder_message_id"] is None
         minutes_left = max(1, round(remaining / 60))
+        command = await self._role_command_mention(guild)
         if first:
             embed = discord.Embed(
                 title=texts.JOIN_TITLE,
                 description=texts.JOIN_TEXT.format(
                     mention=member.mention,
+                    command=command,
                     minutes=self.config.verification_timeout // 60,
                 ),
                 colour=texts.EMBED_COLOR,
@@ -328,12 +356,13 @@ class VerificationCog(commands.Cog):
             embed = discord.Embed(
                 title=texts.REMINDER_TITLE,
                 description=texts.REMINDER_TEXT.format(
-                    mention=member.mention, minutes_left=minutes_left
+                    mention=member.mention, command=command, minutes_left=minutes_left
                 ),
                 colour=texts.EMBED_COLOR,
             )
+        content = texts.JOIN_CALL.format(mention=member.mention, command=command)
         message = await with_backoff(
-            lambda: channel.send(content=member.mention, embed=embed)
+            lambda: channel.send(content=content, embed=embed)
         )
         if message is not None:
             await self.repo.set_last_reminder(guild.id, member.id, message.id)
