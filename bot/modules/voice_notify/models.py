@@ -5,6 +5,9 @@ NAMESPACE = "voice_notify"
 MODE_ALL = "all"
 MODE_SELECTED = "selected"
 
+# Не больше отслеживаемых, чем помещается в меню выбора Discord (/join-alerts).
+MAX_TRACKED = 25
+
 MIGRATIONS = [
     # v1
     [

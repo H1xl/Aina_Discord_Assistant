@@ -10,5 +10,7 @@ MODULE = ModuleSpec(
     description="сообщаю в Telegram, кто зашёл в голосовой канал",
     extensions=("bot.modules.voice_notify.cog",),
     migrations=MIGRATIONS,
+    telegram_routers=("bot.modules.voice_notify.telegram",),
+    telegram_commands=(("join_alerts", "Уведомления о заходах в голос: вкл/выкл и фильтр"),),
     default_enabled=True,
 )

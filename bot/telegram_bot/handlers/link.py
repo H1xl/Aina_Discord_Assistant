@@ -8,7 +8,7 @@ import logging
 import re
 
 from aiogram import Bot, F, Router
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.types import (
     CallbackQuery,
     Chat,
@@ -155,7 +155,9 @@ async def cb_unlink(callback: CallbackQuery, bot: Bot, repo: Repository, discord
     log.info("Telegram-чат %s отвязан от сервера %s", chat.id, guild_id)
 
 
-@router.message(F.text.regexp(CODE_RE))
+# StateFilter(None): пока бот ждёт от пользователя ввода (например, ник
+# в /join_alerts), короткое слово — это ответ, а не код привязки.
+@router.message(StateFilter(None), F.text.regexp(CODE_RE))
 async def plain_code(message: Message, repo: Repository, discord_bot) -> None:
     # Обычное сообщение, состоящее из одного 6-символьного кода.
     await _try_link(message, CODE_RE.match(message.text).group(1), repo, discord_bot)

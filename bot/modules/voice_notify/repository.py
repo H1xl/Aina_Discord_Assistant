@@ -18,6 +18,27 @@ class VoiceNotifyRepository(Repository):
         )
         return [row["user_id"] for row in rows]
 
+    async def set_mode(self, guild_id: int, mode: str) -> None:
+        await self._execute(
+            """
+            INSERT INTO voice_notify_settings (guild_id, mode) VALUES (?, ?)
+            ON CONFLICT(guild_id) DO UPDATE SET mode = excluded.mode
+            """,
+            (guild_id, mode),
+        )
+
+    async def add_tracked_user(self, guild_id: int, user_id: int) -> None:
+        await self._execute(
+            "INSERT OR IGNORE INTO voice_notify_users (guild_id, user_id) VALUES (?, ?)",
+            (guild_id, user_id),
+        )
+
+    async def remove_tracked_user(self, guild_id: int, user_id: int) -> None:
+        await self._execute(
+            "DELETE FROM voice_notify_users WHERE guild_id = ? AND user_id = ?",
+            (guild_id, user_id),
+        )
+
     async def save_settings(self, guild_id: int, mode: str, user_ids: list[int]) -> None:
         await self._conn.execute(
             """
