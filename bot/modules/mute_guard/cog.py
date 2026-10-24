@@ -21,7 +21,7 @@ from bot.discord_bot.helpers import deny_admin, is_admin, respond
 from bot.modules.mute_guard import texts
 from bot.modules.mute_guard.repository import MuteGuardRepository
 from bot.modules.mute_guard.views import ProtectView, UnprotectView, format_until
-from bot.telegram_bot.notifier import notify_guild
+from bot.telegram_bot.notifier import notify_guild, tg_escape, tg_user
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ Key = tuple[int, int]  # (guild_id, user_id)
 
 
 def _member_display(member: discord.abc.User) -> str:
-    return f"{member.display_name} ({member})"
+    """Участник для Telegram-уведомления (HTML)."""
+    return tg_user(member.display_name, member.name)
 
 
 class MuteGuardCog(commands.Cog):
@@ -291,7 +292,9 @@ class MuteGuardCog(commands.Cog):
         await self.repo.mark_notified(guild.id, member.id)
         await notify_guild(
             self.bot.tg_bot, self.repo, guild.id, guild.name,
-            texts.TG_UNMUTE_FAILED.format(member=_member_display(member), channel=channel.name),
+            texts.TG_UNMUTE_FAILED.format(
+                member=_member_display(member), channel=tg_escape(channel.name)
+            ),
         )
 
     # ------------------------------------------------------------------

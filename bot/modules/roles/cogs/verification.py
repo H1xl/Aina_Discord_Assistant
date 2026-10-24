@@ -658,7 +658,7 @@ class VerificationCog(commands.Cog):
                 repo=self.repo,
                 guild_id=guild.id,
                 guild_name=guild.name,
-                member_display=f"{member.display_name} ({member})",
+                member=member,
                 role_name=custom_role.name,
                 inviter=inviter,
             )
@@ -740,9 +740,10 @@ class VerificationCog(commands.Cog):
                     repo=self.repo,
                     guild_id=guild.id,
                     guild_name=guild.name,
-                    member_display=f"{member.display_name} ({member})",
+                    member=member,
                     role_name=new_name,
                     inviter=None,
+                    edited=True,
                 )
 
             await respond(
