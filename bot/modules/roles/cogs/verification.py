@@ -22,6 +22,19 @@ log = logging.getLogger(__name__)
 Key = tuple[int, int]  # (guild_id, user_id)
 
 
+def _display_order(role: discord.Role) -> tuple[int, int]:
+    """Ключ порядка ролей, как в списке Discord: при равной позиции выше старшая роль."""
+    return (role.position, -role.id)
+
+
+def _directly_below(
+    role: discord.Role, above: discord.Role, roles: list[discord.Role]
+) -> bool:
+    """True, если ``role`` стоит в списке сразу под ``above``."""
+    low, high = _display_order(role), _display_order(above)
+    return low < high and not any(low < _display_order(r) < high for r in roles)
+
+
 class VerificationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -117,29 +130,43 @@ class VerificationCog(commands.Cog):
     ) -> bool:
         """Поднимает роль на позицию сразу под верхней ролью бота.
 
-        Сразу после create_role позиция иногда «не доезжает» из-за гонки
-        с обновлением списка ролей на стороне Discord, поэтому после каждой
-        попытки проверяем результат по кешу и при необходимости повторяем.
+        Номера позиций в Discord бывают с повторами и пропусками, а кеш ролей
+        сразу после create_role может быть устаревшим, поэтому результат
+        проверяем по свежему списку ролей с сервера и по фактическому порядку
+        (как его показывает Discord), а не по арифметике номеров.
         """
-        for attempt in range(3):
-            top = guild.me.top_role
-            target = max(1, top.position - 1)
+        bot_top_id = guild.me.top_role.id
+        roles: list[discord.Role] = []
+        for attempt in range(4):
+            try:
+                roles = await guild.fetch_roles()
+            except discord.HTTPException:
+                await asyncio.sleep(1 + attempt)
+                continue
+            by_id = {r.id: r for r in roles}
+            mine, bot_top = by_id.get(role.id), by_id.get(bot_top_id)
+            if mine is None or bot_top is None:
+                return False
+            if _directly_below(mine, bot_top, roles):
+                return True
+            if attempt == 3:
+                break
             try:
                 await guild.edit_role_positions(
-                    positions={role: target},
+                    positions={role: max(1, bot_top.position - 1)},
                     reason="Именная роль — сразу под ролью бота",
                 )
             except discord.Forbidden:
                 return False
-            except discord.HTTPException:
-                await asyncio.sleep(1 + attempt)
-                continue
+            except discord.HTTPException as exc:
+                log.info("Не удалось переместить роль %s: %s", role.id, exc)
+            await asyncio.sleep(0.5 + attempt)
 
-            await asyncio.sleep(0.5)  # ждём, пока gateway обновит кеш ролей
-            fresh = guild.get_role(role.id)
-            if fresh is not None and fresh.position >= guild.me.top_role.position - 1:
-                return True
-            await asyncio.sleep(1 + attempt)
+        log.warning(
+            "Роль %s не встала под роль бота на сервере %s; верх списка: %s",
+            role.id, guild.id,
+            [(r.name, r.position, r.id) for r in sorted(roles, key=_display_order, reverse=True)[:8]],
+        )
         return False
 
     # ------------------------------------------------------------------
