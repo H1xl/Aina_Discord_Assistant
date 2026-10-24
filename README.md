@@ -1,4 +1,4 @@
-# Aina RoleManager
+# Aina Discord Assistant
 
 Модульный Discord-бот с уведомлениями в Telegram. Discord- и Telegram-боты
 работают в одном процессе с общей SQLite-базой; бот мультисерверный — каждый
@@ -326,11 +326,11 @@ python -m bot.main
 Если проект ещё не в git:
 
 ```bash
-cd d:\PythonBots\Aina_RoleManager
+cd d:\PythonBots\Aina_Discord_Assistant
 git init
 git add .
 git commit -m "Initial commit"
-git remote add origin https://github.com/ВАШ_ЛОГИН/Aina_RoleManager.git
+git remote add origin https://github.com/ВАШ_ЛОГИН/Aina_Discord_Assistant.git
 git push -u origin main
 ```
 
@@ -351,12 +351,12 @@ sudo usermod -aG docker $USER
 ### 2. Клонирование репозитория
 
 ```bash
-git clone https://github.com/ВАШ_ЛОГИН/Aina_RoleManager.git
-cd Aina_RoleManager
+git clone https://github.com/ВАШ_ЛОГИН/Aina_Discord_Assistant.git
+cd Aina_Discord_Assistant
 ```
 
 Для приватного репозитория используйте deploy key или personal access token:
-`git clone https://ТОКЕН@github.com/ВАШ_ЛОГИН/Aina_RoleManager.git`.
+`git clone https://ТОКЕН@github.com/ВАШ_ЛОГИН/Aina_Discord_Assistant.git`.
 
 ### 3. Настройка окружения
 
@@ -394,7 +394,7 @@ docker compose down             # остановить и удалить кон�
 ### 6. Обновление бота
 
 ```bash
-cd Aina_RoleManager
+cd Aina_Discord_Assistant
 git pull
 docker compose up -d --build    # пересборка и перезапуск одним шагом
 ```
