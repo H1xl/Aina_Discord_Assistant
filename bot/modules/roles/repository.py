@@ -124,6 +124,34 @@ class RolesRepository(Repository):
         await self._conn.commit()
 
     # ------------------------------------------------------------------
+    # Роли ушедших участников (возврат при перезаходе)
+    # ------------------------------------------------------------------
+    async def save_role_snapshot(self, guild_id: int, user_id: int, role_ids: list[int]) -> None:
+        await self._execute(
+            """
+            INSERT INTO member_role_snapshots (guild_id, user_id, role_ids, saved_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                role_ids = excluded.role_ids,
+                saved_at = excluded.saved_at
+            """,
+            (guild_id, user_id, ",".join(map(str, role_ids)), _now()),
+        )
+
+    async def pop_role_snapshot(self, guild_id: int, user_id: int) -> list[int]:
+        """Забирает сохранённые роли участника (запись удаляется)."""
+        async with self._conn.execute(
+            "DELETE FROM member_role_snapshots WHERE guild_id = ? AND user_id = ? "
+            "RETURNING role_ids",
+            (guild_id, user_id),
+        ) as cur:
+            row = await cur.fetchone()
+        await self._conn.commit()
+        if row is None or not row["role_ids"]:
+            return []
+        return [int(value) for value in row["role_ids"].split(",")]
+
+    # ------------------------------------------------------------------
     # pending_verifications
     # ------------------------------------------------------------------
     async def upsert_pending(self, guild_id: int, user_id: int, joined_at: int) -> None:

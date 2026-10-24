@@ -9,6 +9,20 @@ from bot.db.repository import Repository
 from bot.modules.roles import texts
 from bot.telegram_bot.notifier import notify_guild, tg_escape, tg_user
 
+async def send_returned_notice(
+    tg_bot: Optional[Bot],
+    repo: Repository,
+    guild: discord.Guild,
+    member: discord.Member,
+    roles: list[discord.Role],
+) -> None:
+    """Участник вернулся на сервер — роли восстановлены без верификации."""
+    text = texts.TG_RETURNED_NOTICE.format(
+        member=tg_user(member.display_name, member.name),
+        roles=", ".join(f"«{tg_escape(role.name)}»" for role in roles),
+    )
+    await notify_guild(tg_bot, repo, guild.id, guild.name, text)
+
 
 async def send_verification_notice(
     tg_bot: Optional[Bot],

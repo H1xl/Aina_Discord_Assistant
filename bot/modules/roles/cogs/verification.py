@@ -20,7 +20,7 @@ from bot.discord_bot.helpers import (
 )
 from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.roles import models, texts
-from bot.modules.roles.notify import send_verification_notice
+from bot.modules.roles.notify import send_returned_notice, send_verification_notice
 from bot.modules.roles.repository import RolesRepository
 from bot.modules.roles.views.modals import EditRoleModal, RoleModal
 from bot.modules.roles.views.selects import OptionalRolesView
@@ -239,6 +239,10 @@ class VerificationCog(ModuleCog):
             log.info("Сервер %s не настроен — пропускаю on_member_join", guild.id)
             return
 
+        # Вернувшийся участник: роли восстанавливаем, верификацию не требуем.
+        if await self._restore_returning(member, settings):
+            return
+
         no_role = await self._ensure_no_role(guild, settings)
         if no_role is not None:
             if await add_roles_safe(member, [no_role], reason="Новый участник: верификация"):
@@ -272,6 +276,7 @@ class VerificationCog(ModuleCog):
             return
         row = await self.repo.get_pending(guild.id, member.id)
         if row is None or row["status"] not in models.ACTIVE_STATUSES:
+            await self._save_role_snapshot(member)
             return
         # Участник ушёл сам или был кикнут вручную во время ожидания:
         # останавливаем таймер и чистим запись (кик ботом сюда не попадает —
@@ -409,6 +414,82 @@ class VerificationCog(ModuleCog):
             ),
             texts.EMBED_COLOR_WARNING,
         )
+
+    # ------------------------------------------------------------------
+    # Возврат ролей при перезаходе
+    # ------------------------------------------------------------------
+    async def _removed_by_moderator(self, guild: discord.Guild, member: discord.Member) -> bool:
+        """Участника кикнули или забанили (а не ушёл сам) — по журналу аудита."""
+        await asyncio.sleep(1.5)  # запись в журнале появляется чуть позже события
+        since = discord.utils.utcnow() - dt.timedelta(minutes=1)
+        try:
+            async for entry in guild.audit_logs(limit=10):
+                if entry.created_at < since:
+                    break
+                if entry.action not in (discord.AuditLogAction.kick, discord.AuditLogAction.ban):
+                    continue
+                if entry.target is not None and entry.target.id == member.id:
+                    return True
+        except discord.HTTPException as exc:
+            log.info("Не удалось прочитать журнал аудита %s: %s", guild.id, exc)
+        return False
+
+    async def _save_role_snapshot(self, member: discord.Member) -> None:
+        """Запоминает роли ушедшего участника, чтобы вернуть их при перезаходе.
+
+        Тем, кого кикнули или забанили, роли не сохраняем — их возвращение
+        должно проходить через обычную верификацию.
+        """
+        guild = member.guild
+        settings = await self.repo.get_settings(guild.id)
+        no_role_id = settings["no_role_id"] if settings else None
+        role_ids = [
+            role.id for role in member.roles
+            if not role.is_default() and not role.managed and role.id != no_role_id
+        ]
+        if not role_ids:
+            return
+        if await self._removed_by_moderator(guild, member):
+            log.info("Участник %s удалён модератором — роли не сохраняю", member.id)
+            return
+        await self.repo.save_role_snapshot(guild.id, member.id, role_ids)
+        await self.repo.add_action_log(
+            guild.id, "roles_saved", f"user_id={member.id} count={len(role_ids)}"
+        )
+
+    async def _restore_returning(self, member: discord.Member, settings) -> bool:
+        """Выдаёт вернувшемуся участнику сохранённые роли. True — верификация не нужна."""
+        guild = member.guild
+        role_ids = await self.repo.pop_role_snapshot(guild.id, member.id)
+        if not role_ids:
+            return False
+        top = guild.me.top_role
+        roles = [
+            role for rid in role_ids
+            if (role := guild.get_role(rid)) is not None
+            and not role.managed and role < top and role.id != settings["no_role_id"]
+        ]
+        failed = await add_roles_safe(member, roles, reason="Участник вернулся: роли восстановлены")
+        restored = [role for role in roles if role not in failed]
+        if not restored:
+            return False
+
+        await self.repo.add_action_log(
+            guild.id, "returned", f"user_id={member.id} roles={len(restored)}"
+        )
+        description = texts.LOG_RETURNED_TEXT.format(
+            user=f"{member.mention} (`{member}`)",
+            roles=", ".join(role.mention for role in restored),
+        )
+        if failed:
+            description += texts.LOG_RETURNED_FAILED.format(
+                roles=", ".join(role.mention for role in failed)
+            )
+        await self._log_to_channel(
+            guild, texts.LOG_RETURNED_TITLE, description, texts.EMBED_COLOR_SUCCESS
+        )
+        await send_returned_notice(self.bot.tg_bot, self.repo, guild, member, restored)
+        return True
 
     # ------------------------------------------------------------------
     # Таймер напоминаний и кика

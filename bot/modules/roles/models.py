@@ -95,6 +95,19 @@ MIGRATIONS = [
         )
         """,
     ],
+    # v3 — роли ушедшего участника: при возвращении выдаются обратно
+    # без повторной верификации.
+    [
+        """
+        CREATE TABLE IF NOT EXISTS member_role_snapshots (
+            guild_id INTEGER NOT NULL,
+            user_id  INTEGER NOT NULL,
+            role_ids TEXT NOT NULL,     -- через запятую
+            saved_at INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        )
+        """,
+    ],
 ]
 
 # Статусы pending_verifications
