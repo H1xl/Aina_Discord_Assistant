@@ -38,20 +38,3 @@ class VoiceNotifyRepository(Repository):
             "DELETE FROM voice_notify_users WHERE guild_id = ? AND user_id = ?",
             (guild_id, user_id),
         )
-
-    async def save_settings(self, guild_id: int, mode: str, user_ids: list[int]) -> None:
-        await self._conn.execute(
-            """
-            INSERT INTO voice_notify_settings (guild_id, mode) VALUES (?, ?)
-            ON CONFLICT(guild_id) DO UPDATE SET mode = excluded.mode
-            """,
-            (guild_id, mode),
-        )
-        await self._conn.execute(
-            "DELETE FROM voice_notify_users WHERE guild_id = ?", (guild_id,)
-        )
-        await self._conn.executemany(
-            "INSERT OR IGNORE INTO voice_notify_users (guild_id, user_id) VALUES (?, ?)",
-            [(guild_id, user_id) for user_id in user_ids],
-        )
-        await self._conn.commit()

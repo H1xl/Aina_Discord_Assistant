@@ -5,7 +5,7 @@ NAMESPACE = "voice_notify"
 MODE_ALL = "all"
 MODE_SELECTED = "selected"
 
-# Не больше отслеживаемых, чем помещается в меню выбора Discord (/join-alerts).
+# Предел списка отслеживаемых: панель /join_alerts в Telegram остаётся обозримой.
 MAX_TRACKED = 25
 
 MIGRATIONS = [
