@@ -59,6 +59,46 @@ async def with_backoff(factory, attempts: int = 3):
             delay *= 2
 
 
+async def add_roles_safe(
+    member: discord.Member, roles: list[discord.Role], reason: str
+) -> list[discord.Role]:
+    """Выдаёт роли по одной и возвращает те, что выдать не удалось.
+
+    Уже имеющиеся роли пропускаются, удалённые с сервера — тоже (выдавать
+    нечего); ошибка одной роли не мешает выдать остальные.
+    """
+    failed = []
+    for role in roles:
+        if role in member.roles:
+            continue
+        try:
+            await member.add_roles(role, reason=reason)
+        except discord.NotFound:
+            continue
+        except discord.HTTPException as exc:
+            log.warning("Не удалось выдать роль %s участнику %s: %s", role.id, member.id, exc)
+            failed.append(role)
+    return failed
+
+
+async def remove_roles_safe(
+    member: discord.Member, roles: list[discord.Role], reason: str
+) -> list[discord.Role]:
+    """Снимает роли по одной и возвращает те, что снять не удалось."""
+    failed = []
+    for role in roles:
+        if role not in member.roles:
+            continue
+        try:
+            await member.remove_roles(role, reason=reason)
+        except discord.NotFound:
+            continue
+        except discord.HTTPException as exc:
+            log.warning("Не удалось снять роль %s с участника %s: %s", role.id, member.id, exc)
+            failed.append(role)
+    return failed
+
+
 async def expire_view_message(
     message: Optional[discord.Message], description: str = texts.VIEW_EXPIRED
 ) -> None:

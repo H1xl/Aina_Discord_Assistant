@@ -10,7 +10,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.core.utils import format_hex_color
-from bot.discord_bot.helpers import respond, with_backoff
+from bot.discord_bot.helpers import (
+    add_roles_safe,
+    remove_roles_safe,
+    respond,
+    with_backoff,
+)
 from bot.modules.roles import models, texts
 from bot.modules.roles.notify import send_verification_notice
 from bot.modules.roles.repository import RolesRepository
@@ -232,9 +237,7 @@ class VerificationCog(commands.Cog):
 
         no_role = await self._ensure_no_role(guild, settings)
         if no_role is not None:
-            try:
-                await member.add_roles(no_role, reason="Новый участник: верификация")
-            except discord.Forbidden:
+            if await add_roles_safe(member, [no_role], reason="Новый участник: верификация"):
                 await self._log_to_channel(
                     guild,
                     "⚠️ Не хватает прав",
@@ -582,16 +585,10 @@ class VerificationCog(commands.Cog):
                 if role is not None and role not in to_add:
                     to_add.append(role)
 
-            try:
-                await member.add_roles(*to_add, reason="Верификация /role")
-                no_role = (
-                    guild.get_role(settings["no_role_id"])
-                    if settings and settings["no_role_id"]
-                    else None
-                )
-                if no_role is not None and no_role in member.roles:
-                    await member.remove_roles(no_role, reason="Верификация пройдена")
-            except discord.Forbidden:
+            # Роли выдаём по одной: уже имеющиеся (например, выданные вручную)
+            # пропускаются, а сбой одной роли не срывает всю верификацию.
+            failed = await add_roles_safe(member, to_add, reason="Верификация /role")
+            if custom_role in failed:
                 await respond(
                     interaction, texts.ROLE_CREATE_FORBIDDEN, ephemeral=True,
                     colour=texts.EMBED_COLOR_ERROR,
@@ -603,6 +600,25 @@ class VerificationCog(commands.Cog):
                     texts.EMBED_COLOR_ERROR,
                 )
                 return
+            no_role = (
+                guild.get_role(settings["no_role_id"])
+                if settings and settings["no_role_id"]
+                else None
+            )
+            if no_role is not None:
+                failed += await remove_roles_safe(
+                    member, [no_role], reason="Верификация пройдена"
+                )
+            if failed:
+                await self._log_to_channel(
+                    guild,
+                    "⚠️ Не хватает прав",
+                    texts.LOG_ROLES_PARTIAL.format(
+                        user=f"{member.mention} (`{member}`)",
+                        roles=", ".join(role.mention for role in failed),
+                    ),
+                    texts.EMBED_COLOR_WARNING,
+                )
 
             # Останавливаем таймер и закрываем pending-запись.
             if tracked:
