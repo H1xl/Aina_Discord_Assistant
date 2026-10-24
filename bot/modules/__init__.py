@@ -26,6 +26,8 @@ class ModuleSpec:
     migrations: Sequence[Migration] = field(default_factory=list)
     # Пути модулей с объектом ``router`` (aiogram.Router) для Telegram.
     telegram_routers: Sequence[str] = ()
+    # Telegram-команды модуля (команда, описание) — для меню бота и /help.
+    telegram_commands: Sequence[tuple[str, str]] = ()
     # Включён ли модуль на сервере, пока админ не переключил его в /modules.
     default_enabled: bool = True
     # Короткое описание для меню /modules.
@@ -37,6 +39,7 @@ _REGISTRY = {
     "roles": "bot.modules.roles",
     "mute_guard": "bot.modules.mute_guard",
     "voice_notify": "bot.modules.voice_notify",
+    "voice_dashboard": "bot.modules.voice_dashboard",
 }
 
 ALL_MODULES = tuple(_REGISTRY)

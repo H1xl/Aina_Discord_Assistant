@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DEFAULT_MODULES = ("roles", "mute_guard", "voice_notify")
+DEFAULT_MODULES = ("roles", "mute_guard", "voice_notify", "voice_dashboard")
 
 
 @dataclass(frozen=True)

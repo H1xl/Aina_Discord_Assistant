@@ -13,17 +13,31 @@ from bot.telegram_bot.handlers.link import router as link_router
 
 log = logging.getLogger(__name__)
 
+# Команды ядра: (команда, описание) — для меню бота.
+CORE_COMMANDS = (
+    ("start", texts.TG_CMD_START),
+    ("servers", texts.TG_CMD_SERVERS),
+    ("unlink", texts.TG_CMD_UNLINK),
+)
+
+
+def all_commands(discord_bot) -> list[tuple[str, str]]:
+    """Команды ядра и всех загруженных модулей."""
+    commands = list(CORE_COMMANDS)
+    for module in discord_bot.modules:
+        commands.extend(module.telegram_commands)
+    return commands
+
 
 def create_telegram_bot(config: Config) -> Bot:
     return Bot(token=config.telegram_token)
 
 
-async def _set_commands(bot: Bot) -> None:
+async def _set_commands(bot: Bot, discord_bot) -> None:
     try:
         await bot.set_my_commands([
-            BotCommand(command="start", description=texts.TG_CMD_START),
-            BotCommand(command="servers", description=texts.TG_CMD_SERVERS),
-            BotCommand(command="unlink", description=texts.TG_CMD_UNLINK),
+            BotCommand(command=command, description=description)
+            for command, description in all_commands(discord_bot)
         ])
     except Exception:
         log.exception("Не удалось задать меню команд Telegram")
