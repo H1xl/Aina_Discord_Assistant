@@ -14,4 +14,5 @@ MODULE = ModuleSpec(
         "bot.modules.roles.cogs.import_roles",
     ),
     migrations=MIGRATIONS,
+    telegram_routers=("bot.modules.roles.telegram",),
 )

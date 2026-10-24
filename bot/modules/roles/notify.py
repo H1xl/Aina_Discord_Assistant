@@ -4,10 +4,51 @@ from typing import Optional
 
 import discord
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup
 
 from bot.db.repository import Repository
 from bot.modules.roles import texts
+from bot.telegram_bot.actions import button
 from bot.telegram_bot.notifier import notify_guild, tg_escape, tg_user
+
+# Префикс callback_data кнопок модуля (обработчики — bot/modules/roles/telegram.py).
+CALLBACK_PREFIX = "rl"
+
+
+def join_markup(guild_id: int, user_id: int) -> InlineKeyboardMarkup:
+    """Кнопки под уведомлением о новичке, проходящем верификацию."""
+    ids = f"{guild_id}:{user_id}"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            button(texts.TG_BTN_EXTEND, f"{CALLBACK_PREFIX}:ext:{ids}"),
+            button(texts.TG_BTN_SKIP, f"{CALLBACK_PREFIX}:skip:{ids}"),
+        ],
+        [button(texts.TG_BTN_KICK, f"{CALLBACK_PREFIX}:kick:{ids}")],
+    ])
+
+
+def _account_age(member: discord.Member) -> str:
+    days = (discord.utils.utcnow() - member.created_at).days
+    return texts.TG_ACCOUNT_AGE.format(date=member.created_at.strftime("%d.%m.%Y"), days=days)
+
+
+async def send_join_notice(
+    tg_bot: Optional[Bot],
+    repo: Repository,
+    guild: discord.Guild,
+    member: discord.Member,
+    minutes: int,
+) -> None:
+    """Новый участник зашёл и проходит верификацию — с кнопками действий."""
+    text = texts.TG_JOIN_NOTICE.format(
+        member=tg_user(member.display_name, member.name),
+        created=_account_age(member),
+        minutes=minutes,
+    )
+    await notify_guild(
+        tg_bot, repo, guild.id, guild.name, text, reply_markup=join_markup(guild.id, member.id)
+    )
+
 
 async def send_returned_notice(
     tg_bot: Optional[Bot],

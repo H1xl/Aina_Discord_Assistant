@@ -154,6 +154,13 @@ class RolesRepository(Repository):
     # ------------------------------------------------------------------
     # pending_verifications
     # ------------------------------------------------------------------
+    async def set_pending_joined_at(self, guild_id: int, user_id: int, joined_at: int) -> None:
+        """Сдвигает отсчёт верификации (продление из Telegram)."""
+        await self._execute(
+            "UPDATE pending_verifications SET joined_at = ? WHERE guild_id = ? AND user_id = ?",
+            (joined_at, guild_id, user_id),
+        )
+
     async def upsert_pending(self, guild_id: int, user_id: int, joined_at: int) -> None:
         await self._execute(
             """

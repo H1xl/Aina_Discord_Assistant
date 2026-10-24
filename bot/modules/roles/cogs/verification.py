@@ -20,7 +20,11 @@ from bot.discord_bot.helpers import (
 )
 from bot.discord_bot.module_cog import ModuleCog
 from bot.modules.roles import models, texts
-from bot.modules.roles.notify import send_returned_notice, send_verification_notice
+from bot.modules.roles.notify import (
+    send_join_notice,
+    send_returned_notice,
+    send_verification_notice,
+)
 from bot.modules.roles.repository import RolesRepository
 from bot.modules.roles.views.modals import EditRoleModal, RoleModal
 from bot.modules.roles.views.selects import OptionalRolesView
@@ -268,6 +272,10 @@ class VerificationCog(ModuleCog):
             old_task.cancel()
         self._start_timer(guild.id, member.id, joined_at)
         await self.repo.add_action_log(guild.id, "join", f"user_id={member.id}")
+        await send_join_notice(
+            self.bot.tg_bot, self.repo, guild, member,
+            minutes=self.config.verification_timeout // 60,
+        )
 
     @commands.Cog.listener()
     async def on_member_remove(self, member: discord.Member) -> None:
@@ -489,6 +497,94 @@ class VerificationCog(ModuleCog):
             guild, texts.LOG_RETURNED_TITLE, description, texts.EMBED_COLOR_SUCCESS
         )
         await send_returned_notice(self.bot.tg_bot, self.repo, guild, member, restored)
+        return True
+
+    # ------------------------------------------------------------------
+    # Действия администратора из Telegram
+    # ------------------------------------------------------------------
+    async def _close_pending(self, guild: discord.Guild, user_id: int, row, status: str) -> None:
+        task = self.timers.pop((guild.id, user_id), None)
+        if task:
+            task.cancel()
+        await self._delete_reminder(guild, row["last_reminder_message_id"])
+        await self.repo.set_pending_status(guild.id, user_id, status)
+        await self.repo.set_reminder_task_active(guild.id, user_id, False)
+
+    async def extend_verification(
+        self, guild: discord.Guild, user_id: int, seconds: int
+    ) -> Optional[int]:
+        """Продлевает верификацию. Возвращает минуты до кика или None, если её уже нет."""
+        key = (guild.id, user_id)
+        if self._lock(key).locked():
+            return None
+        row = await self.repo.get_pending(guild.id, user_id)
+        if row is None or row["status"] not in models.ACTIVE_STATUSES:
+            return None
+        joined_at = row["joined_at"] + seconds
+        await self.repo.set_pending_joined_at(guild.id, user_id, joined_at)
+        old_task = self.timers.pop(key, None)
+        if old_task:
+            old_task.cancel()
+        self._start_timer(guild.id, user_id, joined_at)
+        await self.repo.add_action_log(guild.id, "verification_extended", f"user_id={user_id}")
+        return max(1, math.ceil((joined_at + self.config.verification_timeout - time.time()) / 60))
+
+    async def skip_verification(
+        self, guild: discord.Guild, member: discord.Member, admin: discord.Member
+    ) -> bool:
+        """Завершает верификацию без именной роли: обязательные роли, без «Не имеет ролей».
+
+        Именную роль участник сможет оформить позже через /role.
+        """
+        async with self._lock((guild.id, member.id)):
+            row = await self.repo.get_pending(guild.id, member.id)
+            if row is None or row["status"] not in models.ACTIVE_STATUSES:
+                return False
+            settings = await self.repo.get_settings(guild.id)
+            mandatory = [
+                role for rid in await self.repo.get_mandatory_roles(guild.id)
+                if (role := guild.get_role(rid)) is not None
+            ]
+            reason = f"Верификация пропущена администратором {admin}"
+            failed = await add_roles_safe(member, mandatory, reason=reason)
+            no_role = guild.get_role(settings["no_role_id"]) if settings and settings["no_role_id"] else None
+            if no_role is not None:
+                failed += await remove_roles_safe(member, [no_role], reason=reason)
+            await self._close_pending(guild, member.id, row, models.STATUS_COMPLETED)
+            await self.repo.add_action_log(
+                guild.id, "verification_skipped", f"user_id={member.id} by={admin.id}"
+            )
+            description = texts.LOG_SKIPPED_TEXT.format(
+                admin=f"{admin.mention} (`{admin}`)", user=f"{member.mention} (`{member}`)"
+            )
+            if failed:
+                description += texts.LOG_RETURNED_FAILED.format(
+                    roles=", ".join(role.mention for role in failed)
+                )
+            await self._log_to_channel(
+                guild, texts.LOG_SKIPPED_TITLE, description, texts.EMBED_COLOR_SUCCESS
+            )
+        return True
+
+    async def kick_pending(
+        self, guild: discord.Guild, member: discord.Member, admin: discord.Member
+    ) -> bool:
+        """Кикает участника, ещё проходящего верификацию. Forbidden пробрасывается."""
+        row = await self.repo.get_pending(guild.id, member.id)
+        if row is None or row["status"] not in models.ACTIVE_STATUSES:
+            return False
+        # Статус — до кика, чтобы on_member_remove не принял его за уход.
+        await self._close_pending(guild, member.id, row, models.STATUS_KICKED)
+        await member.kick(reason=texts.KICK_BY_ADMIN_REASON.format(admin=admin))
+        await self.repo.add_action_log(guild.id, "kick_by_admin", f"user_id={member.id} by={admin.id}")
+        await self._log_to_channel(
+            guild,
+            texts.KICK_LOG_TITLE,
+            texts.KICK_BY_ADMIN_LOG.format(
+                admin=f"{admin.mention} (`{admin}`)", user=f"`{member}` (ID {member.id})"
+            ),
+            texts.EMBED_COLOR_WARNING,
+        )
         return True
 
     # ------------------------------------------------------------------
