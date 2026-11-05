@@ -28,7 +28,7 @@ from bot.modules.voice_notify.models import (
     NAMESPACE,
 )
 from bot.modules.voice_notify.repository import VoiceNotifyRepository
-from bot.telegram_bot.actions import authorize_admin, button, parse_callback
+from bot.telegram_bot.actions import authorize_admin, button, parse_callback, resolve_admin
 from bot.telegram_bot.notifier import tg_escape, tg_user
 
 log = logging.getLogger(__name__)
@@ -49,16 +49,6 @@ def _data(action: str, guild_id: int, user_id: Optional[int] = None) -> str:
     if user_id is not None:
         parts.append(str(user_id))
     return ":".join(parts)
-
-
-async def _admin_member(repo: Repository, discord_bot, guild_id: int, tg_user_id: int):
-    """Discord-администратор за Telegram-аккаунтом или None."""
-    guild = discord_bot.get_guild(guild_id)
-    discord_id = await repo.get_telegram_admin(guild_id, tg_user_id)
-    member = guild.get_member(discord_id) if guild and discord_id else None
-    if member is None or not member.guild_permissions.administrator:
-        return None
-    return member
 
 
 def _member_label(guild: discord.Guild, user_id: int) -> str:
@@ -171,7 +161,7 @@ async def cmd_join_alerts(
         return
     guilds = []
     for guild_id in await repo.get_linked_guild_ids(message.chat.id):
-        if await _admin_member(repo, discord_bot, guild_id, message.from_user.id):
+        if await resolve_admin(repo, discord_bot, guild_id, message.from_user.id):
             guilds.append(discord_bot.get_guild(guild_id))
     if not guilds:
         await message.answer(texts.TG_NO_ACCESS)
@@ -305,7 +295,7 @@ async def on_name(
     if guild is None or message.from_user is None:
         await state.clear()
         return
-    admin = await _admin_member(repo, discord_bot, guild.id, message.from_user.id)
+    admin = await resolve_admin(repo, discord_bot, guild.id, message.from_user.id)
     if admin is None:
         await state.clear()
         await message.answer(texts.TG_NO_ACCESS)

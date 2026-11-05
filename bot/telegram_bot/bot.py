@@ -20,6 +20,7 @@ CORE_COMMANDS = (
     ("start", texts.TG_CMD_START),
     ("servers", texts.TG_CMD_SERVERS),
     ("unlink", texts.TG_CMD_UNLINK),
+    ("access", texts.TG_CMD_ACCESS),
 )
 
 

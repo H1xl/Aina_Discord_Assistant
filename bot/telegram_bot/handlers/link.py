@@ -19,6 +19,8 @@ from aiogram.types import (
 
 from bot.core import texts
 from bot.db.repository import Repository
+from bot.telegram_bot.actions import admin_discord_id, forget_admin
+from bot.telegram_bot.notifier import tg_escape
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +65,7 @@ async def _try_link(message: Message, code: str, repo: Repository, discord_bot) 
     # запоминает, кто его подключил.
     if message.from_user is not None:
         await repo.bind_telegram_admin(guild_id, message.from_user.id, admin_id)
+        forget_admin(message.from_user.id)
     is_new = await repo.add_telegram_link(
         guild_id, message.chat.id, _chat_title(message.chat), admin_id
     )
@@ -97,6 +100,36 @@ async def cmd_servers(message: Message, repo: Repository, discord_bot) -> None:
     await message.answer(
         texts.TG_SERVERS_LIST.format(servers=servers) if servers else texts.TG_SERVERS_EMPTY
     )
+
+
+@router.message(Command("access"))
+async def cmd_access(message: Message, repo: Repository, discord_bot) -> None:
+    """Перепроверяет права администратора пользователя на серверах этого чата."""
+    if message.from_user is None:
+        return
+    guild_ids = await repo.get_linked_guild_ids(message.chat.id)
+    if not guild_ids:
+        await message.answer(texts.TG_SERVERS_EMPTY)
+        return
+    forget_admin(message.from_user.id)
+    lines = []
+    for guild_id in guild_ids:
+        guild = discord_bot.get_guild(guild_id)
+        name = tg_escape(guild.name if guild else f"ID {guild_id}")
+        discord_id = await admin_discord_id(repo, guild_id, message.from_user.id)
+        member = guild.get_member(discord_id) if guild and discord_id else None
+        if discord_id is None:
+            line = texts.TG_ACCESS_UNKNOWN
+        elif member is None:
+            line = texts.TG_ACCESS_NOT_MEMBER
+        elif member.guild_permissions.administrator:
+            line = texts.TG_ACCESS_ADMIN
+        else:
+            line = texts.TG_ACCESS_NOT_ADMIN
+        lines.append(line.format(
+            guild=name, discord=tg_escape(member.display_name) if member else ""
+        ))
+    await message.answer(texts.TG_ACCESS.format(lines="\n".join(lines)), parse_mode="HTML")
 
 
 @router.message(Command("unlink"))

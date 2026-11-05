@@ -41,16 +41,45 @@ def confirm_markup(yes_data: str, no_data: str) -> InlineKeyboardMarkup:
     ]])
 
 
+# (guild_id, tg_user_id) → Discord ID подтверждённого администратора (None — не
+# подтверждён). База читается один раз на пользователя; кеш сбрасывается при
+# подтверждении кодом /connect и командой /access. Сами права администратора
+# проверяются при каждом действии по кешу Discord-бота (без сети и базы).
+_admin_ids: dict[tuple[int, int], Optional[int]] = {}
+
+
+async def admin_discord_id(repo: Repository, guild_id: int, tg_user_id: int) -> Optional[int]:
+    key = (guild_id, tg_user_id)
+    if key not in _admin_ids:
+        _admin_ids[key] = await repo.get_telegram_admin(guild_id, tg_user_id)
+    return _admin_ids[key]
+
+
+def forget_admin(tg_user_id: int) -> None:
+    """Сбрасывает кеш подтверждений Telegram-пользователя."""
+    for key in [key for key in _admin_ids if key[1] == tg_user_id]:
+        del _admin_ids[key]
+
+
+async def resolve_admin(
+    repo: Repository, discord_bot, guild_id: int, tg_user_id: int
+) -> Optional[discord.Member]:
+    """Discord-администратор за Telegram-аккаунтом или None."""
+    guild = discord_bot.get_guild(guild_id)
+    discord_id = await admin_discord_id(repo, guild_id, tg_user_id)
+    member = guild.get_member(discord_id) if guild and discord_id else None
+    if member is None or not member.guild_permissions.administrator:
+        return None
+    return member
+
+
 async def authorize_admin(
     callback: CallbackQuery, repo: Repository, discord_bot, guild_id: int
 ) -> Optional[discord.Member]:
     """Discord-администратор, нажавший кнопку, или None (с всплывающим отказом)."""
-    guild = discord_bot.get_guild(guild_id)
-    discord_id = await repo.get_telegram_admin(guild_id, callback.from_user.id)
-    member = guild.get_member(discord_id) if guild and discord_id else None
-    if member is None or not member.guild_permissions.administrator:
+    member = await resolve_admin(repo, discord_bot, guild_id, callback.from_user.id)
+    if member is None:
         await callback.answer(texts.TG_ACTION_FORBIDDEN, show_alert=True)
-        return None
     return member
 
 
