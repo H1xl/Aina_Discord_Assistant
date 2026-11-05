@@ -35,8 +35,10 @@ async def notify_guild(
     reply_markup: Optional[InlineKeyboardMarkup] = None,
     skip_discord_user: Optional[int] = None,
 ) -> None:
-    """Шлёт уведомление во все чаты сервера, с указанием сервера в шапке.
+    """Шлёт уведомление во все чаты сервера, с указанием сервера.
 
+    ``text`` начинается со строки-события (что произошло и с кем), затем
+    пустая строка и подробности; строка с сервером вставляется после события.
     ``text`` — HTML-разметка Telegram: пользовательские данные в нём должны
     быть экранированы (tg_escape / tg_user). ``reply_markup`` — кнопки действий
     (обрабатываются Telegram-роутером модуля). ``skip_discord_user`` — не слать
@@ -46,7 +48,11 @@ async def notify_guild(
     """
     if tg_bot is None:
         return
-    message = texts.TG_GUILD_HEADER.format(guild_name=tg_escape(guild_name)) + "\n\n" + text
+    # Первая строка — само событие: её видно в превью push-уведомления,
+    # поэтому сервер идёт второй строкой, а подробности — ниже.
+    headline, _, details = text.partition("\n")
+    header = texts.TG_GUILD_HEADER.format(guild_name=tg_escape(guild_name))
+    message = f"{headline}\n{header}\n{details}" if details else f"{headline}\n{header}"
     for link in await repo.get_telegram_links(guild_id):
         if skip_discord_user is not None and link["discord_user_id"] == skip_discord_user:
             continue

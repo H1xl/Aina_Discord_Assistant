@@ -549,7 +549,11 @@ class MuteGuardCog(ModuleCog):
 
         actor_user = actor if isinstance(actor, (discord.User, discord.Member)) else None
         text = texts.TG_GUARD_NOTICE.format(
-            title=title,
+            head=title.format(
+                actor=f"<b>{tg_escape(actor_user.display_name)}</b>" if actor_user
+                else texts.ACTOR_SOMEONE,
+                name=tg_escape(member.display_name),
+            ),
             member=_member_display(member),
             icon=icon,
             action=action,
@@ -581,7 +585,8 @@ class MuteGuardCog(ModuleCog):
         await notify_guild(
             self.bot.tg_bot, self.repo, guild.id, guild.name,
             texts.TG_UNDO_FAILED.format(
-                member=_member_display(member), icon=icon, action=action, reason=reason
+                name=tg_escape(member.display_name), member=_member_display(member),
+                icon=icon, action=action, reason=reason,
             ),
         )
 

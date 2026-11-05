@@ -66,6 +66,7 @@ class VoiceNotifyCog(ModuleCog):
 
         channel = after.channel
         text = texts.TG_JOIN_NOTICE.format(
+            name=tg_escape(member.display_name),
             member=tg_user(member.display_name, member.name),
             channel=tg_escape(channel.name),
             count=len(channel.members),

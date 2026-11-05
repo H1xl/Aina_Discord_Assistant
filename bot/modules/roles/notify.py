@@ -41,6 +41,7 @@ async def send_join_notice(
 ) -> None:
     """Новый участник зашёл и проходит верификацию — с кнопками действий."""
     text = texts.TG_JOIN_NOTICE.format(
+        name=tg_escape(member.display_name),
         member=tg_user(member.display_name, member.name),
         created=_account_age(member),
         minutes=minutes,
@@ -59,6 +60,7 @@ async def send_returned_notice(
 ) -> None:
     """Участник вернулся на сервер — роли восстановлены без верификации."""
     text = texts.TG_RETURNED_NOTICE.format(
+        name=tg_escape(member.display_name),
         member=tg_user(member.display_name, member.name),
         roles=", ".join(f"«{tg_escape(role.name)}»" for role in roles),
     )
@@ -78,6 +80,7 @@ async def send_verification_notice(
     """Шлёт уведомление о верификации (или изменении роли) во все привязанные чаты."""
     template = texts.TG_ROLE_EDIT_NOTICE if edited else texts.TG_VERIFICATION_NOTICE
     text = template.format(
+        name=tg_escape(member.display_name),
         member=tg_user(member.display_name, member.name),
         role_name=tg_escape(role_name),
         inviter=tg_escape(inviter) if inviter else f"<i>{texts.INVITER_NOT_SPECIFIED}</i>",

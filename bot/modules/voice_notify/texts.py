@@ -9,11 +9,9 @@ MODE_ALL_LABEL = "Все участники"
 MODE_SELECTED_LABEL = "Только выбранные"
 
 TG_JOIN_NOTICE = (
-    "🎧 <b>Вход в голосовой канал</b>\n"
+    "🎧 <b>{name}</b> зашёл(ла) в «{channel}»\n"
     "\n"
     "👤 <b>Участник:</b> {member}\n"
-    "🔊 <b>Канал:</b> {channel}\n"
-    "\n"
     "👥 Сейчас в канале: <b>{count}</b>"
 )
 # /join_alerts в Telegram

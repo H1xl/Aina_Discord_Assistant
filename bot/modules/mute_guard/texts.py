@@ -100,7 +100,7 @@ ACTOR_NO_AUDIT = "<i>неизвестно (нет права «Просмотр 
 
 # Telegram-уведомления размечены HTML; подставляемые значения экранируются в cog.py.
 TG_GUARD_NOTICE = (
-    "🛡 <b>{title}</b>\n"
+    "{head}\n"
     "\n"
     "👤 <b>Участник:</b> {member}\n"
     "{icon} <b>Действие:</b> {action}\n"
@@ -109,10 +109,13 @@ TG_GUARD_NOTICE = (
     "\n"
     "{result}"
 )
-TITLE_MUTE = "Попытка заглушить защищённого участника"
-TITLE_MOVE = "Защищённого участника перетащили в другой канал"
-TITLE_DISCONNECT = "Защищённого участника отключили от голосового канала"
-TITLE_TIMEOUT = "Защищённому участнику выдали тайм-аут"
+# Первая строка уведомления (видна в превью push): {actor} — имя виновника
+# или ACTOR_SOMEONE, {name} — защищённый участник.
+TITLE_MUTE = "🛡 {actor} пытался(ась) заглушить <b>{name}</b>"
+TITLE_MOVE = "🛡 {actor} перетащил(а) <b>{name}</b> в другой канал"
+TITLE_DISCONNECT = "🛡 {actor} отключил(а) <b>{name}</b> от голосового канала"
+TITLE_TIMEOUT = "🛡 {actor} выдал(а) тайм-аут <b>{name}</b>"
+ACTOR_SOMEONE = "Кто-то"
 ICON_MUTE = "🔇"
 ICON_MOVE = "↪️"
 ICON_DISCONNECT = "📴"
@@ -125,7 +128,7 @@ RESULT_TIMEOUT = "Я сразу сняла тайм-аут."
 TG_ATTEMPT_SUPPRESSED = "\n\n🔁 Ещё попыток с прошлого уведомления: <b>{count}</b>"
 TG_ATTEMPT_COOLDOWN = "\n<i>Следующее уведомление — не раньше чем через {minutes} мин.</i>"
 TG_UNDO_FAILED = (
-    "⚠️ <b>Не удалось защитить участника</b>\n"
+    "⚠️ Не удалось защитить <b>{name}</b>: {action}\n"
     "\n"
     "👤 <b>Участник:</b> {member}\n"
     "{icon} <b>Действие:</b> {action}\n"
