@@ -2,8 +2,8 @@
 
 from bot.core.texts import *  # noqa: F401,F403
 
-DASHBOARD_TITLE = "🎧 <b>Голосовые каналы</b>"
-DASHBOARD_GUILD = "🏰 <b>{guild_name}</b>"
+# Шапка сводки одного сервера (у каждого сервера — своё сообщение).
+DASHBOARD_TITLE = "🏰 <b>{guild_name}</b> · 🎧 голосовые каналы"
 DASHBOARD_CHANNEL = "🔊 <b>{channel}</b> · {count}"
 DASHBOARD_MEMBER = "    • {member} — {duration}{states}"
 DASHBOARD_EMPTY = "<i>в голосовых каналах никого нет</i>"

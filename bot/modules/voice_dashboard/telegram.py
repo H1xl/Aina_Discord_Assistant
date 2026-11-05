@@ -1,4 +1,7 @@
-"""Telegram-команды сводки голосовых каналов: /online и /online_off."""
+"""Telegram-команды сводки голосовых каналов: /online и /online_off.
+
+У каждого сервера чата — своё сообщение-сводка.
+"""
 
 from aiogram import Bot, Router
 from aiogram.filters import Command
@@ -15,7 +18,7 @@ COG_NAME = "VoiceDashboardCog"
 @router.message(Command("online"))
 async def cmd_voice(message: Message, discord_bot) -> None:
     cog = discord_bot.get_cog(COG_NAME)
-    if cog is None or not await cog.send_dashboard(message.chat.id):
+    if cog is None or not await cog.send_dashboards(message.chat.id):
         await message.answer(texts.DASHBOARD_NO_SERVERS)
 
 
@@ -25,6 +28,6 @@ async def cmd_voice_off(message: Message, bot: Bot, discord_bot) -> None:
         await message.answer(texts.DASHBOARD_OFF_FORBIDDEN)
         return
     cog = discord_bot.get_cog(COG_NAME)
-    # Успех виден и так — сводка исчезает; отвечаем, только если её не было.
-    if cog is None or not await cog.remove_dashboard(message.chat.id):
+    # Успех виден и так — сводки исчезают; отвечаем, только если их не было.
+    if cog is None or not await cog.remove_dashboards(message.chat.id):
         await message.answer(texts.DASHBOARD_NOT_FOUND)
