@@ -10,7 +10,6 @@ from typing import Optional
 import aiosqlite
 
 from .database import BaseRepository
-from .models import CODE_KIND_CHAT
 
 
 def _now() -> int:
@@ -22,21 +21,31 @@ class Repository(BaseRepository):
     # Telegram-связки (многие-ко-многим)
     # ------------------------------------------------------------------
     async def add_telegram_link(
-        self, guild_id: int, telegram_chat_id: int, chat_title: Optional[str]
+        self,
+        guild_id: int,
+        telegram_chat_id: int,
+        chat_title: Optional[str],
+        discord_user_id: Optional[int],
     ) -> bool:
-        """Привязывает чат к серверу. Возвращает False, если связка уже была."""
+        """Привязывает чат к серверу. Возвращает False, если связка уже была.
+
+        ``discord_user_id`` — администратор, чьим кодом подключён чат
+        (при повторной привязке — последний подключивший).
+        """
         existed = await self._fetchone(
             "SELECT 1 FROM telegram_links WHERE guild_id = ? AND telegram_chat_id = ?",
             (guild_id, telegram_chat_id),
         )
         await self._execute(
             """
-            INSERT INTO telegram_links (guild_id, telegram_chat_id, chat_title, linked_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO telegram_links
+                (guild_id, telegram_chat_id, chat_title, linked_at, discord_user_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(guild_id, telegram_chat_id) DO UPDATE SET
-                chat_title = excluded.chat_title
+                chat_title = excluded.chat_title,
+                discord_user_id = excluded.discord_user_id
             """,
-            (guild_id, telegram_chat_id, chat_title, _now()),
+            (guild_id, telegram_chat_id, chat_title, _now(), discord_user_id),
         )
         return existed is None
 
@@ -80,29 +89,28 @@ class Repository(BaseRepository):
     # Коды /connect
     # ------------------------------------------------------------------
     async def create_connect_code(
-        self, guild_id: int, code: str, created_by: int, ttl_seconds: int,
-        kind: str = CODE_KIND_CHAT,
+        self, guild_id: int, code: str, created_by: int, ttl_seconds: int
     ) -> None:
         await self._execute(
             """
             INSERT OR REPLACE INTO connect_codes
-                (code, guild_id, created_by, expires_at, used, kind)
-            VALUES (?, ?, ?, ?, 0, ?)
+                (code, guild_id, created_by, expires_at, used)
+            VALUES (?, ?, ?, ?, 0)
             """,
-            (code, guild_id, created_by, _now() + ttl_seconds, kind),
+            (code, guild_id, created_by, _now() + ttl_seconds),
         )
 
     async def use_connect_code(self, code: str) -> Optional[aiosqlite.Row]:
         """Атомарно помечает код использованным.
 
-        Возвращает строку (guild_id, created_by, kind), если код существовал,
+        Возвращает строку (guild_id, created_by), если код существовал,
         не истёк и не был использован.
         """
         async with self._conn.execute(
             """
             UPDATE connect_codes SET used = 1
             WHERE code = ? AND used = 0 AND expires_at > ?
-            RETURNING guild_id, created_by, kind
+            RETURNING guild_id, created_by
             """,
             (code, _now()),
         ) as cur:

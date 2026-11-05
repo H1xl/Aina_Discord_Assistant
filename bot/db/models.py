@@ -84,10 +84,23 @@ CORE_MIGRATIONS = [
             PRIMARY KEY (guild_id, tg_user_id)
         )
         """,
-        # chat — привязка чата (/connect), admin — подтверждение админа (/telegram-me)
+        # Тип кода. Сейчас всегда «chat»: подтверждение админа (бывший
+        # /telegram-me) объединено с /connect.
         "ALTER TABLE connect_codes ADD COLUMN kind TEXT NOT NULL DEFAULT 'chat'",
     ],
+    # v5 — кто подключил чат (Discord ID автора кода /connect): о его
+    # собственных заходах в голос этот чат не уведомляется.
+    [
+        "ALTER TABLE telegram_links ADD COLUMN discord_user_id INTEGER",
+        # Для уже привязанных личных чатов владелец известен по подтверждённому
+        # Telegram-аккаунту администратора (id личного чата = id пользователя).
+        """
+        UPDATE telegram_links SET discord_user_id = (
+            SELECT a.discord_user_id FROM telegram_admins a
+            WHERE a.guild_id = telegram_links.guild_id
+              AND a.tg_user_id = telegram_links.telegram_chat_id
+        )
+        WHERE discord_user_id IS NULL
+        """,
+    ],
 ]
-
-CODE_KIND_CHAT = "chat"
-CODE_KIND_ADMIN = "admin"
