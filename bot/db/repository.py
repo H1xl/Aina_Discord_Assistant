@@ -10,6 +10,7 @@ from typing import Optional
 import aiosqlite
 
 from .database import BaseRepository
+from .models import CONFIGURED_GUILD_TABLES
 
 
 def _now() -> int:
@@ -171,6 +172,37 @@ class Repository(BaseRepository):
     async def cleanup_expired_codes(self) -> None:
         await self._execute(
             "DELETE FROM connect_codes WHERE expires_at <= ? OR used = 1", (_now(),)
+        )
+
+    # ------------------------------------------------------------------
+    # Приватный режим
+    # ------------------------------------------------------------------
+    async def load_unlocked_guilds(self) -> set[int]:
+        """Разблокированные серверы. Заодно разблокирует уже настроенные
+        (с данными в базе) — им пароль не нужен. Вызывается один раз при старте."""
+        async with self._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ) as cur:
+            existing = {row["name"] for row in await cur.fetchall()}
+        now = _now()
+        for table in CONFIGURED_GUILD_TABLES:
+            if table in existing:
+                await self._conn.execute(
+                    f"INSERT OR IGNORE INTO unlocked_guilds (guild_id, unlocked_by, unlocked_at) "
+                    f"SELECT DISTINCT guild_id, NULL, ? FROM {table}",
+                    (now,),
+                )
+        await self._conn.commit()
+        rows = await self._fetchall("SELECT guild_id FROM unlocked_guilds")
+        return {row["guild_id"] for row in rows}
+
+    async def unlock_guild(self, guild_id: int, unlocked_by: int) -> None:
+        await self._execute(
+            """
+            INSERT INTO unlocked_guilds (guild_id, unlocked_by, unlocked_at) VALUES (?, ?, ?)
+            ON CONFLICT(guild_id) DO NOTHING
+            """,
+            (guild_id, unlocked_by, _now()),
         )
 
     # ------------------------------------------------------------------

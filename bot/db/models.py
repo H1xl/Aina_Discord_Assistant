@@ -103,4 +103,27 @@ CORE_MIGRATIONS = [
         WHERE discord_user_id IS NULL
         """,
     ],
+    # v6 — приватный режим: серверы, разблокированные паролем (/unlock)
+    # или уже настроенные до его включения.
+    [
+        """
+        CREATE TABLE IF NOT EXISTS unlocked_guilds (
+            guild_id    INTEGER PRIMARY KEY,
+            unlocked_by INTEGER,          -- NULL — сервер был настроен до приватного режима
+            unlocked_at INTEGER NOT NULL
+        )
+        """,
+    ],
 ]
+
+# Таблицы, наличие строк сервера в которых означает «сервер уже настроен»
+# (для приватного режима такие серверы разблокированы без пароля).
+CONFIGURED_GUILD_TABLES = (
+    "telegram_links",
+    "guild_modules",
+    "guild_settings",
+    "personal_roles",
+    "mute_protections",
+    "voice_notify_settings",
+    "voice_notify_users",
+)

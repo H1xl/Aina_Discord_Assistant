@@ -30,6 +30,10 @@ class Config:
     # Уведомления о заходах в голос: перезаход раньше, чем через столько
     # секунд после выхода, не сообщается.
     voice_notify_cooldown: int = 900
+    # Приватный режим: команды на сервере работают только после /unlock
+    # с паролем BOT_PASSWORD (уже настроенные серверы пароля не требуют).
+    private_mode: bool = False
+    bot_password: str = ""
     # Необязательный ID тестового сервера для мгновенной синхронизации slash-команд.
     test_guild_id: int | None = None
 
@@ -49,6 +53,11 @@ def load_config() -> Config:
         else DEFAULT_MODULES
     )
 
+    private_mode = os.getenv("PRIVATE_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+    bot_password = os.getenv("BOT_PASSWORD", "")
+    if private_mode and not bot_password:
+        raise RuntimeError("PRIVATE_MODE включён, но BOT_PASSWORD не задан — заполните .env")
+
     test_guild = os.getenv("TEST_GUILD_ID", "").strip()
     return Config(
         discord_token=discord_token,
@@ -60,5 +69,7 @@ def load_config() -> Config:
         connect_code_ttl=int(os.getenv("CONNECT_CODE_TTL", "600")),
         mute_guard_notify_cooldown=int(os.getenv("MUTE_GUARD_NOTIFY_COOLDOWN", "900")),
         voice_notify_cooldown=int(os.getenv("VOICE_NOTIFY_COOLDOWN", "900")),
+        private_mode=private_mode,
+        bot_password=bot_password,
         test_guild_id=int(test_guild) if test_guild else None,
     )

@@ -11,6 +11,7 @@ from bot.core import texts
 from bot.core.config import Config
 from bot.db.database import Database
 from bot.db.repository import Repository
+from bot.discord_bot.helpers import respond
 from bot.modules import ModuleSpec, load_modules
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ CORE_COGS = (
     "bot.discord_bot.cogs.modules",
     "bot.discord_bot.cogs.help",
 )
+# Ког приватного режима (/unlock) — только при PRIVATE_MODE.
+PRIVACY_COG = "bot.discord_bot.cogs.privacy"
+# Команды, доступные и на неразблокированном сервере.
+OPEN_COMMANDS = frozenset({"unlock", "help"})
 
 
 class AinaBot(commands.Bot):
@@ -51,6 +56,9 @@ class AinaBot(commands.Bot):
         self.modules = load_modules(config.enabled_modules)
         # guild_id → {модуль: включён}; заполняется лениво из guild_modules.
         self._guild_modules: dict[int, dict[str, bool]] = {}
+        # Приватный режим: разблокированные серверы. Загружаются из базы один
+        # раз при старте; проверка перед командой — поиск в этом множестве.
+        self.unlocked_guilds: set[int] = set()
 
     def get_module(self, name: str) -> Optional[ModuleSpec]:
         return next((m for m in self.modules if m.name == name), None)
@@ -78,6 +86,13 @@ class AinaBot(commands.Bot):
                 await self.load_extension(extension)
             log.info("Модуль «%s» (%s) загружен", module.title, module.name)
 
+        if self.config.private_mode:
+            # После миграций модулей: уже настроенные серверы видны по их таблицам.
+            self.unlocked_guilds = await self.repo.load_unlocked_guilds()
+            self.tree.interaction_check = self._private_mode_check
+            await self.load_extension(PRIVACY_COG)
+            log.info("Приватный режим: разблокировано серверов — %d", len(self.unlocked_guilds))
+
         if self.config.test_guild_id:
             guild = discord.Object(id=self.config.test_guild_id)
             self.tree.copy_global_to(guild=guild)
@@ -86,6 +101,16 @@ class AinaBot(commands.Bot):
                      self.config.test_guild_id)
         await self.tree.sync()
         log.info("Глобальная синхронизация slash-команд запрошена")
+
+    async def _private_mode_check(self, interaction: discord.Interaction) -> bool:
+        """Общая проверка перед каждой slash-командой в приватном режиме."""
+        if interaction.guild_id is None or interaction.guild_id in self.unlocked_guilds:
+            return True
+        if (interaction.data or {}).get("name") in OPEN_COMMANDS:
+            return True
+        if interaction.type == discord.InteractionType.application_command:
+            await respond(interaction, texts.PRIVATE_LOCKED, colour=texts.EMBED_COLOR_WARNING)
+        return False
 
     async def _on_app_command_error(
         self, interaction: discord.Interaction, error: app_commands.AppCommandError
