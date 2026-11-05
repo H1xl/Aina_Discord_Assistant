@@ -3,7 +3,8 @@
 Когда участник заходит в голосовой канал (не переход между каналами),
 бот сообщает в привязанные Telegram-чаты, кто и куда зашёл. Перезаходы
 не спамят: не чаще одного уведомления на участника за
-VOICE_NOTIFY_COOLDOWN. Включение, режим и список отслеживаемых участников
+VOICE_NOTIFY_COOLDOWN. О собственных заходах администратора бот не пишет
+в чаты, которые тот подключил (/connect). Включение, режим и список отслеживаемых участников
 настраиваются только в Telegram (/join_alerts, см. telegram.py).
 """
 
@@ -67,7 +68,10 @@ class VoiceNotifyCog(ModuleCog):
         await self.repo.add_action_log(
             guild.id, "voice_join_notified", f"user_id={member.id} channel_id={channel.id}"
         )
-        await notify_guild(self.bot.tg_bot, self.repo, guild.id, guild.name, text)
+        # В чаты, которые подключил сам вошедший, о его заходе не пишем.
+        await notify_guild(
+            self.bot.tg_bot, self.repo, guild.id, guild.name, text, skip_discord_user=member.id
+        )
 
 
 async def setup(bot: commands.Bot) -> None:
