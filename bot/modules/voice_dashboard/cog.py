@@ -11,6 +11,7 @@
 import asyncio
 import logging
 import time
+from typing import Optional
 
 import discord
 from aiogram.exceptions import (
@@ -169,38 +170,42 @@ class VoiceDashboardCog(ModuleCog):
         except TelegramAPIError:
             pass  # сообщение уже удалили руками или бот потерял доступ
 
-    def _cancel_pending(self, chat_id: int) -> None:
-        for key in [k for k in self._pending if k[0] == chat_id]:
+    def _cancel_pending(self, chat_id: int, guild_id: Optional[int] = None) -> None:
+        for key in [k for k in self._pending
+                    if k[0] == chat_id and (guild_id is None or k[1] == guild_id)]:
             self._pending.pop(key).cancel()
 
-    async def send_dashboards(self, chat_id: int) -> bool:
-        """Присылает по сводке на каждый сервер чата (старые удаляет).
+    async def shown_guild_ids(self, chat_id: int) -> set[int]:
+        """Серверы, сводки которых сейчас есть в чате."""
+        return set(await self.repo.chat_dashboards(chat_id))
 
-        False — показывать нечего (нет привязанных серверов с включённым модулем).
-        """
-        self._cancel_pending(chat_id)
+    async def send_dashboard(self, chat_id: int, guild_id: int) -> bool:
+        """Присылает сводку сервера в чат (прежнюю сводку этого сервера удаляет,
+        чтобы новая оказалась внизу). False — сервер недоступен для сводки."""
+        self._cancel_pending(chat_id, guild_id)
         async with self._lock(chat_id):
-            guilds = await self.chat_guilds(chat_id)
-            if not guilds:
+            guild = self.bot.get_guild(guild_id)
+            if guild is None or not await self._shown_in_chat(chat_id, guild_id):
                 return False
-            for guild_id, message_id in (await self.repo.chat_dashboards(chat_id)).items():
-                await self._delete_message(chat_id, message_id)
-                await self.repo.delete_dashboard(chat_id, guild_id)
-            for guild in guilds:
-                message = await self.bot.tg_bot.send_message(
-                    chat_id, self.render(guild), parse_mode="HTML"
-                )
-                await self.repo.set_dashboard(chat_id, guild.id, message.message_id)
+            old = (await self.repo.chat_dashboards(chat_id)).get(guild_id)
+            if old is not None:
+                await self._delete_message(chat_id, old)
+            message = await self.bot.tg_bot.send_message(
+                chat_id, self.render(guild), parse_mode="HTML"
+            )
+            await self.repo.set_dashboard(chat_id, guild_id, message.message_id)
             return True
 
-    async def remove_dashboards(self, chat_id: int) -> bool:
-        """Удаляет все сводки чата. False — их и не было."""
-        self._cancel_pending(chat_id)
+    async def remove_dashboards(self, chat_id: int, guild_id: Optional[int] = None) -> bool:
+        """Удаляет сводки чата (все или одного сервера). False — удалять было нечего."""
+        self._cancel_pending(chat_id, guild_id)
         async with self._lock(chat_id):
             dashboards = await self.repo.chat_dashboards(chat_id)
-            for guild_id, message_id in dashboards.items():
+            if guild_id is not None:
+                dashboards = {g: m for g, m in dashboards.items() if g == guild_id}
+            for gid, message_id in dashboards.items():
                 await self._delete_message(chat_id, message_id)
-                await self.repo.delete_dashboard(chat_id, guild_id)
+                await self.repo.delete_dashboard(chat_id, gid)
             return bool(dashboards)
 
     def schedule_refresh(self, chat_id: int, guild_id: int) -> None:
@@ -270,14 +275,15 @@ class VoiceDashboardCog(ModuleCog):
 
     async def _migrate_legacy(self) -> None:
         """Общие сводки до v2 заменяем раздельными: старое сообщение удаляем,
-        в чат присылаем новые — по одной на сервер."""
+        в чат присылаем новые — по одной на каждый сервер, что были в общей."""
         for chat_id, message_id in (await self.repo.pop_legacy_dashboards()).items():
             async with self._lock(chat_id):
                 await self._delete_message(chat_id, message_id)
-            try:
-                await self.send_dashboards(chat_id)
-            except TelegramAPIError as exc:
-                log.info("Не удалось пересоздать сводку в чате %s: %s", chat_id, exc)
+            for guild in await self.chat_guilds(chat_id):
+                try:
+                    await self.send_dashboard(chat_id, guild.id)
+                except TelegramAPIError as exc:
+                    log.info("Не удалось пересоздать сводку в чате %s: %s", chat_id, exc)
 
     # ------------------------------------------------------------------
     # События Discord
