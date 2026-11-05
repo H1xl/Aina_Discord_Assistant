@@ -1,4 +1,10 @@
-discord.py>=2.4,<3.0
-aiogram>=3.13,<4.0
-aiosqlite>=0.20
-python-dotenv>=1.0
+# Версии закреплены ради расхода памяти: импорт aiogram строит pydantic-модели
+# всех типов Telegram API, и в новых версиях это заметно дороже
+# (весь бот: aiogram 3.20 — ~111 МБ, 3.25 — ~123 МБ, 3.31 — ~182 МБ).
+# Обновляя, сверяйте память процесса.
+discord.py==2.7.1
+aiogram==3.20.0.post0
+pydantic==2.11.10
+aiohttp==3.11.18
+aiosqlite==0.22.1
+python-dotenv==1.2.4
