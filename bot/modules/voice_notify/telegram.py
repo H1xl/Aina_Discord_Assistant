@@ -20,7 +20,13 @@ from aiogram.types import CallbackQuery, ForceReply, InlineKeyboardMarkup, Messa
 
 from bot.db.repository import Repository
 from bot.modules.voice_notify import texts
-from bot.modules.voice_notify.models import MAX_TRACKED, MODE_ALL, MODE_SELECTED, NAMESPACE
+from bot.modules.voice_notify.models import (
+    AUTODELETE_OPTIONS,
+    MAX_TRACKED,
+    MODE_ALL,
+    MODE_SELECTED,
+    NAMESPACE,
+)
 from bot.modules.voice_notify.repository import VoiceNotifyRepository
 from bot.telegram_bot.actions import authorize_admin, button, parse_callback
 from bot.telegram_bot.notifier import tg_escape, tg_user
@@ -60,17 +66,26 @@ def _member_label(guild: discord.Guild, user_id: int) -> str:
     return tg_user(member.display_name, member.name) if member else f"ID {user_id}"
 
 
+def _duration(minutes: int) -> str:
+    if minutes % 60:
+        return texts.DURATION_MINUTES.format(minutes=minutes)
+    return texts.DURATION_HOURS.format(hours=minutes // 60)
+
+
 async def render_panel(discord_bot, guild: discord.Guild) -> tuple[str, InlineKeyboardMarkup]:
     vrepo = VoiceNotifyRepository(discord_bot.db)
     enabled = await discord_bot.is_module_enabled(guild.id, NAMESPACE)
     mode = await vrepo.get_mode(guild.id)
     user_ids = await vrepo.get_tracked_users(guild.id)
+    autodelete = await vrepo.get_autodelete(guild.id)
 
     users = "\n".join(f"• {_member_label(guild, uid)}" for uid in user_ids) or texts.TG_USERS_NONE
     text = texts.TG_PANEL.format(
         guild_name=tg_escape(guild.name),
         status=texts.TG_STATUS_ON if enabled else texts.TG_STATUS_OFF,
         mode=texts.MODE_SELECTED_LABEL if mode == MODE_SELECTED else texts.MODE_ALL_LABEL,
+        autodelete=texts.AUTODELETE_ON.format(duration=_duration(autodelete)) if autodelete
+        else texts.AUTODELETE_OFF,
         users=users,
         count=len(user_ids),
         max=MAX_TRACKED,
@@ -90,6 +105,9 @@ async def render_panel(discord_bot, guild: discord.Guild) -> tuple[str, InlineKe
                    _data("sel", guild.id)),
         ],
         [button(texts.TG_BTN_ADD, _data("add", guild.id))],
+        [button(texts.TG_BTN_AUTODELETE.format(
+            value=_duration(autodelete) if autodelete else texts.AUTODELETE_OFF
+        ), _data("ad", guild.id))],
     ]
     if user_ids:
         rows[2].append(button(texts.TG_BTN_REMOVE, _data("rm", guild.id)))
@@ -231,6 +249,28 @@ async def on_action(
         await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
         await callback.answer(texts.TG_REMOVE_HINT)
         return
+    elif action == "ad":
+        current = await vrepo.get_autodelete(guild_id)
+        options = [
+            button(("✓ " if minutes == current else "")
+                   + (_duration(minutes) if minutes else texts.AUTODELETE_OFF),
+                   _data("ads", guild_id, minutes))
+            for minutes in AUTODELETE_OPTIONS
+        ]
+        rows = [options[i:i + 3] for i in range(0, len(options), 3)]
+        rows.append([button(texts.TG_BTN_BACK, _data("open", guild_id))])
+        await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+        await callback.answer(texts.TG_AUTODELETE_HINT)
+        return
+    elif action == "ads":
+        minutes = ids[1] if ids[1] in AUTODELETE_OPTIONS else 0
+        await vrepo.set_autodelete(guild_id, minutes)
+        await vrepo.add_action_log(
+            guild_id, "voice_notify_autodelete", f"minutes={minutes} by={admin.id} via=telegram"
+        )
+        cog = discord_bot.get_cog("VoiceNotifyCog")
+        if cog is not None:
+            await cog.reload_pending()
     elif action == "del":
         await vrepo.remove_tracked_user(guild_id, ids[1])
         await vrepo.add_action_log(
@@ -248,7 +288,7 @@ async def on_action(
         await callback.answer()
         return
 
-    # on/off/all/sel/del/open — перерисовываем панель на месте.
+    # on/off/all/sel/ads/del/open — перерисовываем панель на месте.
     await _show_panel(callback.message, discord_bot, guild, edit=True)
     await callback.answer()
 

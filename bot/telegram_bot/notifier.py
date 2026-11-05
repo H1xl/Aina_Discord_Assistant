@@ -34,7 +34,7 @@ async def notify_guild(
     text: str,
     reply_markup: Optional[InlineKeyboardMarkup] = None,
     skip_discord_user: Optional[int] = None,
-) -> None:
+) -> list[tuple[int, int]]:
     """Шлёт уведомление во все чаты сервера, с указанием сервера.
 
     ``text`` начинается со строки-события (что произошло и с кем), затем
@@ -43,11 +43,14 @@ async def notify_guild(
     быть экранированы (tg_escape / tg_user). ``reply_markup`` — кнопки действий
     (обрабатываются Telegram-роутером модуля). ``skip_discord_user`` — не слать
     в чаты, которые подключил этот участник Discord (о его собственных
-    действиях). Ошибки Telegram не пробрасываются:
-    уведомление не должно ломать основное действие в Discord.
+    действиях). Ошибки Telegram не пробрасываются: уведомление не должно
+    ломать основное действие в Discord.
+
+    Возвращает отправленные сообщения: [(chat_id, message_id), ...].
     """
+    sent: list[tuple[int, int]] = []
     if tg_bot is None:
-        return
+        return sent
     # Первая строка — само событие: её видно в превью push-уведомления,
     # поэтому сервер идёт второй строкой, а подробности — ниже.
     headline, _, details = text.partition("\n")
@@ -58,17 +61,19 @@ async def notify_guild(
             continue
         chat_id = link["telegram_chat_id"]
         try:
-            await tg_bot.send_message(
+            result = await tg_bot.send_message(
                 chat_id, message, parse_mode="HTML", reply_markup=reply_markup
             )
+            sent.append((chat_id, result.message_id))
         except TelegramMigrateToChat as exc:
             # Группа стала супергруппой — переносим связки на новый id.
             await repo.migrate_telegram_chat(chat_id, exc.migrate_to_chat_id)
             try:
-                await tg_bot.send_message(
+                result = await tg_bot.send_message(
                     exc.migrate_to_chat_id, message, parse_mode="HTML",
                     reply_markup=reply_markup,
                 )
+                sent.append((exc.migrate_to_chat_id, result.message_id))
             except Exception:
                 log.exception("Не удалось отправить в мигрированный чат %s",
                               exc.migrate_to_chat_id)
@@ -80,3 +85,4 @@ async def notify_guild(
             await repo.add_action_log(guild_id, "telegram_auto_unlinked", f"chat_id={chat_id}")
         except Exception:
             log.exception("Не удалось отправить Telegram-уведомление (chat_id=%s)", chat_id)
+    return sent

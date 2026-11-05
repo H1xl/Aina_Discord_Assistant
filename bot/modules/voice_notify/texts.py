@@ -21,9 +21,19 @@ TG_PANEL = (
     "\n"
     "<b>Статус:</b> {status}\n"
     "<b>Режим:</b> {mode}\n"
+    "<b>Автоудаление:</b> {autodelete}\n"
     "\n"
     "<b>Отслеживаемые</b> ({count}/{max}):\n"
     "{users}"
+)
+AUTODELETE_OFF = "выключено"
+AUTODELETE_ON = "через {duration} после того, как канал опустеет"
+DURATION_MINUTES = "{minutes} мин"
+DURATION_HOURS = "{hours} ч"
+TG_BTN_AUTODELETE = "🗑 Автоудаление: {value}"
+TG_AUTODELETE_HINT = (
+    "Через сколько удалять уведомления о заходах после того, "
+    "как в канале никого не осталось?"
 )
 TG_STATUS_ON = "🔔 включены"
 TG_STATUS_OFF = "🔕 выключены"
